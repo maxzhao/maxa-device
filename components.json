@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "upstream": {
+    "windows-mcp": { "repository": "https://github.com/CursorTouch/Windows-MCP", "commit": "63f6c09e4c3138262a93fc5f1121f3ef6ec7f37c", "version": "0.8.9", "license": "MIT" },
+    "mobile-mcp": { "repository": "https://github.com/mobile-next/mobile-mcp", "commit": "ad3b42336d89717313af45176c48538bea6ec363", "version": "1.0.17", "license": "Apache-2.0" },
+    "mobilecli": { "repository": "https://github.com/mobile-next/mobilecli", "commit": "88dd806c44f8f6db4bd885f8fc62f3e1767479c9", "version": "1.0.23", "license": "FSL-1.1-ALv2", "use": "private internal use; redistribution requires license review" }
+  },
+  "runtime": { "python": "3.14.0", "node": "22.21.1", "mobilewright": "0.0.69", "adb": "37.0.1", "ripgrep": "15.1.0", "uv-build-tool": "0.8.18" },
+  "runtimeSources": {
+    "python": {
+      "baseUrl": "https://www.python.org/ftp/python/3.14.0/amd64/",
+      "verification": "Each original MSI verified with Windows Authenticode Status=Valid and Python Software Foundation signer before administrative extraction; SHA256 below identifies the verified file.",
+      "files": {
+        "core.msi": "6f98de8f85c234e5cf32ca7d8b03a9034bea97e533e97d160ddbf5e8092b3fd8",
+        "exe.msi": "7caebc55125820a2149ac67a54fa1aba2ac0252e6a02cb2b85d672aa43eefd5c",
+        "lib.msi": "61ee158c81e969439cef6a7da55dcb3bce8c26858b2cbf063d8a7e95b0e44731",
+        "tcltk.msi": "35f1c995f4903a5952ba3fbceef8acf3bd48b2b9939045181394a9ba3fa20c01"
+      }
+    },
+    "node": { "url": "https://nodejs.org/dist/v22.21.1/node-v22.21.1-win-x64.zip", "sha256": "3c624e9fbe07e3217552ec52a0f84e2bdc2e6ffa7348f3fdfb9fbf8f42e23fcf", "verification": "Matched official v22.21.1/SHASUMS256.txt" },
+    "ripgrep": { "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip", "sha256": "124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a" },
+    "adb": { "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip", "sha256": "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99", "upstreamSha1": "e03e78b1d80b396f1c3358e31251cb31740e1110", "verification": "Matched Google repository metadata SHA1; SHA256 is the computed identity of that archive" },
+    "uv-build-tool": { "url": "https://github.com/astral-sh/uv/releases/download/0.8.18/uv-x86_64-pc-windows-msvc.zip", "sha256": "3e42d63c8323839d50b11959ec558ad3954a2c16aab1ad52c0521bd055442a3f", "verification": "Matched adjacent official .zip.sha256; build tool only, not shipped" }
+  }
+}
