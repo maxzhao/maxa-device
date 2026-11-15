@@ -1,0 +1,57 @@
+{
+  "upstream": {
+    "repository": "https://github.com/openatx/android-uiautomator-server-jar",
+    "commit": "d0449b9da4b32ad28bee0d3c3f561c49010acf35",
+    "version": "0.4.0",
+    "sourceUrl": "https://codeload.github.com/openatx/android-uiautomator-server-jar/tar.gz/d0449b9da4b32ad28bee0d3c3f561c49010acf35",
+    "sourceSha256": "244dc45c1bd9a13c13ddbf150d904820dd9671e9089103ab81f3e4c7975e6033",
+    "license": "MIT"
+  },
+  "buildId": "0.4.0-maxa.3",
+  "patch": {
+    "file": "loopback-only.patch",
+    "summary": "HTTP listener remains bound to literal 127.0.0.1.",
+    "sha256": "1ba00a6c96ee4160480cd8aafffde59f245d043347a20a5c0875ad5d178a1a29"
+  },
+  "mainClass": "com.wetest.uia2.Main",
+  "command": "CLASSPATH=/data/local/tmp/maxa-device-u2-0.4.0-maxa.3.jar app_process / com.wetest.uia2.Main -p 9008",
+  "artifact": {
+    "path": "u2-0.4.0-maxa.3.jar",
+    "sha256": "fac36217adbf518cbaf217b22e39e62f2c7cbbf988d8b5017f2ed75a3445c2ae",
+    "size": 3708768,
+    "format": "APK/DEX ZIP, used as app_process classpath; no APK installation",
+    "signing": "Unchanged upstream assembleDebug signing configuration; upstream public test key is not a trust credential."
+  },
+  "build": {
+    "script": "build.sh",
+    "inputs": "build-inputs.json",
+    "dependencyVerification": "verification-metadata.xml",
+    "dependencyVerificationSha256": "901af5ab0928dda385dfcb4f394e4327be443861804913b1af9891657857ec87",
+    "target": ":app:assembleDebug",
+    "sourceChanges": "loopback-only.patch, package-catalog.patch and clipboard-safety.patch; no dependency, signing or entrypoint changes.",
+    "gitVersionMetadata": "Source-archive build, no local Git identity/history is used. Generated APK version metadata may differ from the upstream release; Main does not reference BuildConfig.",
+    "reproducibility": "Two fresh source/work directories using pinned inputs produced byte-identical maxa.3 artifacts (same SHA256).",
+    "scope": "Linux x86_64; JDK, Gradle, SDK and user caches are isolated. No global PATH/profile/SDK changes."
+  },
+  "staticVerification": {
+    "command": "bash build.sh --verify <isolated-sdk>/build-tools/30.0.3/dexdump u2-0.4.0-maxa.3.jar <isolated-work>",
+    "constructor": "com.wetest.uia2.stub.AutomatorHttpServer.<init>:(I)V",
+    "instructions": [
+      "const-string v0, \"127.0.0.1\"",
+      "invoke-direct {v1, v0, v2}, Lfi/iki/elonen/NanoHTTPD;.<init>:(Ljava/lang/String;I)V"
+    ],
+    "bindChain": "NanoHTTPD stores the non-null hostname; ServerRunnable.run constructs InetSocketAddress(String,int) and passes it to ServerSocket.bind(SocketAddress).",
+    "entrypoint": "com.wetest.uia2.Main.main:([Ljava/lang/String;)V retains -p parsing and invokes Main.runServer:(I)V.",
+    "runtimeListenerCheck": "App runtime /proc loopback enforcement remains required in addition to static verification."
+  },
+  "packageCatalogPatch": {
+    "file": "package-catalog.patch",
+    "sha256": "8cf0d8175e984bb42dafe3e8e8aa90be09f93b622898be224bcfbf74073f497c",
+    "summary": "Maxa-owned GET /maxa/packages: launchable applications and display labels, or one package label, via the existing shell system-context PackageManager; no UiAutomation connection needed."
+  },
+  "clipboardPatch": {
+    "file": "clipboard-safety.patch",
+    "sha256": "c10faf9596675d718118b7adef5eadf4098bd9a49f41b743e7e7792b21f677ce",
+    "summary": "Use primary ClipData to distinguish authorized empty clipboard from unreadable/non-text; require read before write, clear empty text restoration, remove clipboard listener and HTTP request-body logs."
+  }
+}

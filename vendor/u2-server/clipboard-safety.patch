@@ -1,0 +1,67 @@
+--- a/app/src/main/java/com/wetest/uia2/stub/AutomatorServiceImpl.java
++++ b/app/src/main/java/com/wetest/uia2/stub/AutomatorServiceImpl.java
+@@ -135,7 +135,7 @@
+ //                Ln.i("clipboard changes to:" + clipboardManager.getText());
+ //            }
+ //        });
+-        clipboardManager.addPrimaryClipChangedListener(() -> Ln.i("clipboard changes to:" + clipboardManager.getText()));
++        // Clipboard contents must never be logged, including during restoration.
+     }
+ 
+     private UiAutomation getUiAutomation() {
+@@ -1657,17 +1657,38 @@
+ 
+     @Override
+     public void setClipboard(String label, String text) {
++        // Require a readable text/empty snapshot before any mutation, even for direct RPC callers.
++        getClipboard();
++        if (text.isEmpty() && Build.VERSION.SDK_INT >= 28) {
++            clipboardManager.clearPrimaryClip();
++            return;
++        }
+         clipboardManager.setPrimaryClip(ClipData.newPlainText(label, text));
+-        // cm.setText(text);
+     }
+ 
+     @Override
+     public String getClipboard() {
+-        CharSequence s = clipboardManager.getText();
+-        if (s == null) {
+-            return null;
+-        }
+-        return s.toString();
++        ClipData clip = clipboardManager.getPrimaryClip();
++        if (clip == null || clip.getItemCount() == 0) {
++            // A null framework result is ambiguous without authorization: background denial
++            // also returns null. Only the already-authorized shell may classify it as empty.
++            Context context = FakeContext.get();
++            android.app.AppOpsManager ops = (android.app.AppOpsManager)
++                    context.getSystemService(Context.APP_OPS_SERVICE);
++            if (Build.VERSION.SDK_INT < 29 || ops == null
++                    || context.checkSelfPermission("android.permission.READ_CLIPBOARD_IN_BACKGROUND")
++                        != PackageManager.PERMISSION_GRANTED
++                    || ops.unsafeCheckOpNoThrow("android:read_clipboard", android.os.Process.myUid(),
++                        FakeContext.PACKAGE_NAME) != android.app.AppOpsManager.MODE_ALLOWED
++                    || clipboardManager.hasPrimaryClip() || clipboardManager.getPrimaryClipDescription() != null) {
++                throw new SecurityException("Clipboard empty/read-denied state cannot be distinguished; no write allowed");
++            }
++            return "";
++        }
++        if (clip.getItemCount() != 1 || clip.getItemAt(0).getText() == null) {
++            throw new IllegalStateException("Clipboard is not a single readable text item; no write allowed");
++        }
++        return clip.getItemAt(0).getText().toString();
+     }
+ 
+     @Override
+--- a/app/src/main/java/com/wetest/uia2/stub/AutomatorHttpServer.java
++++ b/app/src/main/java/com/wetest/uia2/stub/AutomatorHttpServer.java
+@@ -58,7 +58,7 @@
+     public Response serve(String uri, Method method,
+                           Map<String, String> headers, Map<String, String> params,
+                           Map<String, String> files) {
+-        Log.d(String.format("URI: %s, Method: %s, params, %s, files: %s", uri, method, params, files));
++        // Never log request bodies or parameters: they may contain clipboard/text data.
+ 
+         if ("/stop".equals(uri)) {
+             stop();

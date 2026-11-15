@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "platform": "linux-x86_64",
+  "downloads": {
+    "source.tar.gz": {
+      "url": "https://codeload.github.com/openatx/android-uiautomator-server-jar/tar.gz/d0449b9da4b32ad28bee0d3c3f561c49010acf35",
+      "sha256": "244dc45c1bd9a13c13ddbf150d904820dd9671e9089103ab81f3e4c7975e6033"
+    },
+    "jdk.tar.gz": {
+      "version": "Temurin 17.0.13+11",
+      "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_linux_hotspot_17.0.13_11.tar.gz",
+      "sha256": "8682892fc02965930b9022c066fa164dd6f458ef4a5dc262016aa28333b30f49",
+      "checksumSource": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_linux_hotspot_17.0.13_11.tar.gz.sha256.txt"
+    },
+    "gradle.zip": {
+      "version": "7.3.3",
+      "url": "https://services.gradle.org/distributions/gradle-7.3.3-bin.zip",
+      "sha256": "b586e04868a22fd817c8971330fec37e298f3242eb85c374181b12d637f80302",
+      "checksumSource": "https://services.gradle.org/distributions/gradle-7.3.3-bin.zip.sha256"
+    },
+    "platform.zip": {
+      "version": "Android API 34, revision 3, extension 7",
+      "url": "https://dl.google.com/android/repository/platform-34-ext7_r03.zip",
+      "sha256": "16fdb74c55e59ae3ef52def135aec713508467bd56d7dabcd8c9be31fa8b20f3",
+      "upstreamSha1": "1f2e9478d6a7601425ceaa553311dc43191f103d",
+      "checksumSource": "https://dl.google.com/android/repository/repository2-1.xml"
+    },
+    "build-tools.zip": {
+      "version": "30.0.3",
+      "url": "https://dl.google.com/android/repository/build-tools_r30.0.3-linux.zip",
+      "sha256": "24593500aa95d2f99fb4f10658aae7e65cb519be6cd33fa164f15f27f3c4a2d6",
+      "upstreamSha1": "2076ea81b5a2fc298ef7bf85d666f496b928c7f1",
+      "checksumSource": "https://dl.google.com/android/repository/repository2-1.xml"
+    }
+  }
+}

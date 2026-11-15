@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/fllaa/adbutils-rs",
+  "version": "0.1.0",
+  "source": "https://static.crates.io/crates/adbutils-rs/adbutils-rs-0.1.0.crate",
+  "build": "maxa.2",
+  "license": "MIT",
+  "changes": [
+    "src/conn.rs: fail closed on connection failure; remove automatic start-server and retry.",
+    "src/conn.rs: read_some returns currently available bytes for shell streams; read/read_exact retain framing semantics."
+  ],
+  "sourceSha256": "2ce24e773af895c9619518d38e8eee5d0c4ac549a6c0e8c77cf21b7fea5fa429"
+}

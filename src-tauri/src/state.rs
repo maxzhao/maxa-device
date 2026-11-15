@@ -25,7 +25,7 @@ pub struct AppState {
     pub phones: Mutex<Vec<PhoneInfo>>,
     pub mutation: Mutex<()>,
     pub advertisement: Mutex<Option<crate::discovery::Advertisement>>,
-    recordings: Mutex<HashMap<String, McpFiles>>,
+    recordings: Mutex<HashMap<String, RecordingFiles>>,
     controls: SyncMutex<HashMap<String, Arc<AtomicBool>>>,
     control_epochs: SyncMutex<HashMap<String, u64>>,
     client_epochs: SyncMutex<HashMap<String, u64>>,
@@ -68,6 +68,20 @@ impl Drop for InvocationGuard {
                 });
             }
         }
+    }
+}
+struct RecordingFiles {
+    files: Arc<McpFiles>,
+    control: Arc<AtomicBool>,
+    epoch: u64,
+    client_epoch: Option<(String, u64)>,
+    // Native retrieval completed; only artifact publication/commit remains.
+    retrieved: bool,
+}
+impl RecordingFiles {
+    fn valid(&self, epoch: &ControlEpoch) -> bool {
+        !self.control.load(Ordering::SeqCst)
+            && self.epoch == epoch.value && self.client_epoch == epoch.client
     }
 }
 struct McpFiles {
@@ -157,6 +171,22 @@ impl AppState {
             }),
             worker_owners: Mutex::new(HashMap::new()),
         }))
+    }
+    pub async fn windows_worker_event(&self, event: &Value) {
+        if !self.modules.windows_event_current(event).await {
+            return;
+        }
+        if !matches!(event["event"].as_str(), Some("takeover" | "control-stopped" | "worker-exit")) {
+            return;
+        }
+        let mut activities = self.activities.lock().await;
+        if !self.modules.windows_event_current(event).await || event["epoch"].as_u64() != Some(self.control_epoch("windows", "desktop").await.value) { return; }
+        self.invalidate_control("windows", "desktop").await;
+        activities.retain(|a| a.module != "windows");
+        self.worker_owners.lock().await.remove("windows:desktop");
+        // Drain cooperative cancellation, then kill the owned tree after five seconds
+        // if UIA/the operation thread is stuck. No replay and no module toggle.
+        self.modules.release_automation("windows", "desktop").await;
     }
     pub async fn snapshot(&self) -> DeviceSnapshot {
         DeviceSnapshot {
@@ -365,9 +395,10 @@ impl AppState {
             activities.retain(|l| !(l.module == "mobile" && l.resource == physical));
             self.release_controls(removed)
                 .await;
-            self.modules.stop_phone(Some(physical)).await;
+            let stopped = self.modules.stop_phone(Some(physical)).await;
             self.recordings.lock().await.remove(physical);
             drop(activities);
+            stopped?;
         } else {
             self.stop(client).await;
         }
@@ -880,6 +911,8 @@ impl AppState {
         }
         let mut staged = None;
         let mut recording_key = None;
+        let mut stopping_recording = false;
+        let mut recording_retrieved = false;
         if !matches!(
             method,
             "initialize" | "notifications/initialized" | "tools/list" | "tools/call"
@@ -894,14 +927,14 @@ impl AppState {
         if method == "tools/call" {
             let live = self
                 .modules
-                .rpc(
+                .dispatch(
                     module,
                     &json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
                 )
                 .await?;
             let mut tools = live["result"]["tools"]
                 .as_array()
-                .ok_or("upstream catalog unavailable")?
+                .ok_or("native catalog unavailable")?
                 .clone();
             tools.retain(|t| {
                 t["name"]
@@ -932,12 +965,13 @@ impl AppState {
                 .ok_or("tool is not in the admitted live catalog")?;
             crate::schema::validate(&tool["inputSchema"], args)?;
             if name != "mobile_batch_commands" && name != "mobile_stop_screen_recording" {
-                staged = Some(self.stage_mcp(client, &call.chat_id, name, &mut outgoing)?);
+                staged = Some(Arc::new(self.stage_mcp(client, &call.chat_id, name, &mut outgoing)?));
             }
             if module == "windows" {
                 if !windows_tool(name) {
                     return Err("tool not public".into());
                 }
+                if name != "ControlStatus" {
                 control = Some(
                     self.acquire(
                         &client.id,
@@ -948,6 +982,7 @@ impl AppState {
                     )
                     .await?,
                 );
+                }
             } else {
                 if !mobile_tool(name) {
                     return Err("tool not public".into());
@@ -1075,6 +1110,38 @@ impl AppState {
                 self.modules
                     .mobile_handover_check(&physical_id, transport)
                     .await?;
+                if matches!(
+                    name,
+                    "mobile_start_screen_recording" | "mobile_stop_screen_recording"
+                ) {
+                    let key = physical_id.clone();
+                    let recordings = self.recordings.lock().await;
+                    if name == "mobile_start_screen_recording" && recordings.contains_key(&key) {
+                        return Err(
+                            "phone recording already exists; stop it before restarting".into()
+                        );
+                    }
+                    if name == "mobile_stop_screen_recording" {
+                        if let Some(recording) = recordings.get(&key) {
+                            if recording.files.client != client.id || recording.files.chat != call.chat_id {
+                                return Err("PERMISSION_DENIED: recording owner".into());
+                            }
+                            if !recording.valid(epoch.ok_or("control epoch required")?) {
+                                return Err("CONTROL_STOPPED: recording owner epoch expired".into());
+                            }
+                            // The registry keeps ownership until native retrieval AND
+                            // artifact/commit succeed. HTTP drop cannot orphan the native slot.
+                            staged = Some(recording.files.clone());
+                            recording_retrieved = recording.retrieved;
+                            recording_key = Some(key);
+                            stopping_recording = true;
+                        }
+                    } else {
+                        recording_key = Some(key);
+                    }
+                }
+                // Reject a foreign recording owner before acquire can hand over
+                // (and terminate) that owner's native automation.
                 control = Some(
                     self.acquire(
                         &client.id,
@@ -1086,28 +1153,6 @@ impl AppState {
                     .await?,
                 );
                 controlled_transport = Some(physical_id.clone());
-                if matches!(
-                    name,
-                    "mobile_start_screen_recording" | "mobile_stop_screen_recording"
-                ) {
-                    let key = physical_id.clone();
-                    let mut recordings = self.recordings.lock().await;
-                    if name == "mobile_start_screen_recording" && recordings.contains_key(&key) {
-                        return Err(
-                            "phone recording already exists; stop it before restarting".into()
-                        );
-                    }
-                    if name == "mobile_stop_screen_recording" {
-                        if let Some(files) = recordings.get(&key) {
-                            if files.client != client.id || files.chat != call.chat_id {
-                                return Err("PERMISSION_DENIED: recording owner".into());
-                            }
-                        }
-                        staged = recordings.remove(&key);
-                    } else {
-                        recording_key = Some(key);
-                    }
-                }
             }
         }
         if let Some(epoch) = epoch {
@@ -1139,13 +1184,21 @@ impl AppState {
         {
             return Err("CONTROL_STOPPED".into());
         }
-        let received = if let Some(physical) = controlled_transport.as_deref() {
+        if module == "windows" {
+            outgoing["_maxaOwner"] = json!(format!("{}:{}", client.id, call.chat_id));
+            outgoing["_maxaEpoch"] = json!(epoch.map(|e|e.value).unwrap_or(0));
+            outgoing["_maxaOperation"] = json!(epoch.map(|e|e.operation_id.as_str()).unwrap_or(""));
+        }
+        let received = if recording_retrieved {
+            // A new explicit stop can retry local publication, never the phone action.
+            Ok(json!({"jsonrpc":"2.0","id":message["id"],"result":{"isError":false,"content":[{"type":"text","text":"Recording already retrieved; publishing retained staging."}]}}))
+        } else if let Some(physical) = controlled_transport.as_deref() {
             self.modules
-                .rpc_phone(physical, &outgoing, timeout, control.as_ref().unwrap())
+                .dispatch_phone(physical, &outgoing, timeout, control.as_ref().unwrap())
                 .await
         } else {
             self.modules
-                .rpc_controlled(module, &outgoing, timeout, control.as_deref())
+                .dispatch_controlled(module, &outgoing, timeout, control.as_deref())
                 .await
         };
         let outcome_unknown = received.is_err();
@@ -1154,7 +1207,7 @@ impl AppState {
                 self.release_failed_control(epoch, token).await;
             }
         }
-        let mut result=received.unwrap_or_else(|e|json!({"jsonrpc":"2.0","id":message["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("{e}; upstream outcome may be unknown; do not replay")}]}}));
+        let mut result=received.unwrap_or_else(|e|json!({"jsonrpc":"2.0","id":message["id"],"result":{"isError":true,"content":[{"type":"text","text":format!("{e}; operation outcome may be unknown; do not replay")}]}}));
         let active = !control
             .as_ref()
             .map(|c| c.load(Ordering::SeqCst))
@@ -1162,6 +1215,38 @@ impl AppState {
             && self.store.active(&client.id).is_ok();
         if let Some(files) = staged {
             if let Some(key) = recording_key {
+                if stopping_recording {
+                    let activities = self.activities.lock().await;
+                    let still_owned = activities.iter().any(|l| {
+                        l.module == "mobile" && l.resource == key && l.client_id == client.id
+                            && l.chat_id == call.chat_id
+                    });
+                    let mut recordings = self.recordings.lock().await;
+                    let retained = recordings.get_mut(&key).filter(|r| Arc::ptr_eq(&r.files, &files));
+                    let mut owner_lost = true;
+                    if let Some(recording) = retained {
+                        if active && still_owned && recording.valid(epoch.unwrap()) {
+                            owner_lost = false;
+                            if result.get("error").is_none() && result["result"]["isError"] != true {
+                                recording.retrieved = true;
+                                self.finish_mcp_files(&files, client, &mut result, true);
+                                if result.get("error").is_none() && result["result"]["isError"] != true {
+                                    recordings.remove(&key);
+                                }
+                            }
+                        } else {
+                            // The stop/revoke/disconnect path owns native cleanup.
+                            recordings.remove(&key);
+                        }
+                    }
+                    drop(recordings);
+                    drop(activities);
+                    if owner_lost {
+                        result["result"]["isError"] = json!(true);
+                        if !result["result"]["content"].is_array() { result["result"]["content"] = json!([]); }
+                        result["result"]["content"].as_array_mut().unwrap().push(json!({"type":"text","text":"CONTROL_STOPPED: recording ownership expired; no output committed."}));
+                    }
+                } else {
                 let replacements = files
                     .outputs
                     .iter()
@@ -1192,23 +1277,16 @@ impl AppState {
                     && (outcome_unknown
                         || result.get("error").is_none() && result["result"]["isError"] != true)
                 {
-                    self.recordings.lock().await.insert(key, files);
+                    let epoch = epoch.unwrap();
+                    self.recordings.lock().await.insert(key, RecordingFiles {
+                        files, control: control.as_ref().unwrap().clone(), epoch: epoch.value,
+                        client_epoch: epoch.client.clone(), retrieved: false,
+                    });
                 }
                 drop(activities);
+                }
             } else {
                 self.finish_mcp_files(&files, client, &mut result, active);
-            }
-        }
-        if result.get("error").is_none() && result["result"]["isError"] != true {
-            if let Some(transport) = controlled_transport {
-                self.modules
-                    .mark_mobile_owned(
-                        &transport,
-                        message["params"]["arguments"]["device"]
-                            .as_str()
-                            .unwrap_or(""),
-                    )
-                    .await;
             }
         }
         if method == "tools/list" {
@@ -1243,6 +1321,41 @@ mod tests {
         app.modules.ready_for_control_test("windows").await;
         app.modules.ready_for_control_test("mobile").await;
         (root, app, client)
+    }
+    #[tokio::test]
+    async fn recording_staging_survives_failed_publication_until_owner_cleanup() {
+        let (root, app, client) = fixture().await;
+        let epoch = app.control_epoch("mobile", "phone1").await;
+        let token = app.acquire(&client.id, "owner", "mobile", "phone1", &epoch).await.unwrap();
+        let output_dir = root.with_extension("outputs");
+        std::fs::create_dir(&output_dir).unwrap();
+        let output = output_dir.join("recording.mp4");
+        let mut message = json!({"params":{"arguments":{"output":output}}});
+        let files = Arc::new(app.stage_mcp(&client, "owner", "mobile_start_screen_recording", &mut message).unwrap());
+        let stage = files.outputs[0].stage.clone();
+        app.recordings.lock().await.insert("phone1".into(), RecordingFiles {
+            files: files.clone(), control: token.clone(), epoch: epoch.value,
+            client_epoch: epoch.client.clone(), retrieved: true,
+        });
+        std::fs::write(&stage, b"owned recording bytes").unwrap();
+        // A real destination conflict makes publication fail after native retrieval.
+        std::fs::write(&output, b"user changed destination").unwrap();
+        let mut result = json!({"result":{"content":[],"isError":false}});
+        app.finish_mcp_files(&files, &client, &mut result, true);
+        assert_eq!(result["result"]["isError"], true);
+        drop(files);
+        let recordings = app.recordings.lock().await;
+        let retained = &recordings["phone1"];
+        assert!(retained.retrieved && retained.valid(&epoch) && stage.exists());
+        let mut stale = epoch.clone(); stale.value += 1;
+        assert!(!retained.valid(&stale));
+        drop(recordings);
+        app.stop(Some(&client.id)).await;
+        assert!(token.load(Ordering::SeqCst));
+        assert!(!stage.exists());
+        drop(app);
+        std::fs::remove_dir_all(output_dir).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
     async fn trusted_stop_invalidates_old_queue_but_new_request_can_continue() {

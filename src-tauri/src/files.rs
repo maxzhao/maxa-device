@@ -432,7 +432,7 @@ fn under(path: &Path, root: &Path) -> bool {
         path.starts_with(root)
     }
 }
-fn remove_tree(p: &Path) -> Result<()> {
+pub(crate) fn remove_tree(p: &Path) -> Result<()> {
     // Never recurse through reparse points, even when a tree changed after initial validation.
     let m = fs::symlink_metadata(p).map_err(|e| e.to_string())?;
     if is_link(&m) {

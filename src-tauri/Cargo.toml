@@ -29,9 +29,12 @@ uuid = { version = "=1.18.1", features = ["v4", "serde"] }
 sha2 = "=0.10.9"
 base64 = "=0.22.1"
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
-reqwest = { version = "=0.12.24", default-features = false, features = ["rustls-tls", "json", "stream"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 mdns-sd = "=0.13.11"
+adbutils = { package = "adbutils-rs", version = "=0.1.0", default-features = false }
+quick-xml = "=0.37.5"
+regex = "=1.13.1"
+image = { version = "=0.25.9", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(windows)'.dependencies]
 tauri = { version = "=2.9.3", features = ["tray-icon"], optional = true }
@@ -39,9 +42,13 @@ tauri = { version = "=2.9.3", features = ["tray-icon"], optional = true }
 tauri-runtime = { version = "=2.9.2", optional = true }
 tauri-runtime-wry = { version = "=2.9.3", optional = true }
 tauri-macros = { version = "=2.5.1", optional = true }
-windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Memory", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Storage_FileSystem", "Win32_System_RemoteDesktop"] }
+windows = { version = "=0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Com_StructuredStorage", "Win32_UI_Accessibility"] }
+windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Memory", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Storage_FileSystem", "Win32_System_RemoteDesktop", "Win32_System_StationsAndDesktops", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_Com", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_UI_Shell"] }
 
 [target.'cfg(windows)'.build-dependencies]
 tauri-build = { version = "=2.5.2", optional = true }
 tauri-codegen = { version = "=2.5.1", optional = true }
 tauri-utils = { version = "=2.8.1", optional = true }
+
+[patch.crates-io]
+adbutils-rs = { path = "vendor/adbutils-rs" }

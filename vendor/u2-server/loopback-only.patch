@@ -1,0 +1,11 @@
+--- a/app/src/main/java/com/wetest/uia2/stub/AutomatorHttpServer.java
++++ b/app/src/main/java/com/wetest/uia2/stub/AutomatorHttpServer.java
+@@ -45,7 +45,7 @@
+     public static final int DEFAULT_PORT = 9008;
+ 
+     public AutomatorHttpServer(int port) {
+-        super(port);
++        super("127.0.0.1", port);
+     }
+ 
+     private Map<String, JsonRpcServer> router = new HashMap<String, JsonRpcServer>();

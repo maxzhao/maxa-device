@@ -34,6 +34,17 @@ impl Drop for ProcessTree {
 }
 #[cfg(windows)]
 impl ProcessTree {
+    // Only the Windows automation worker opts in. Its explicitly launched user apps
+    // may outlive automation; all internal children remain in the Job by default.
+    pub(crate) fn allow_explicit_child_breakaway(&self) -> Result<()> {
+        use windows_sys::Win32::System::JobObjects::*;
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        if unsafe { SetInformationJobObject(self.0, JobObjectExtendedLimitInformation, &info as *const _ as _, std::mem::size_of_val(&info) as u32) } == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        Ok(())
+    }
     fn terminate(&self) -> bool {
         use windows_sys::Win32::System::JobObjects::*;
         if unsafe { TerminateJobObject(self.0, 1) } == 0 {

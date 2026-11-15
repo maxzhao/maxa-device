@@ -1,0 +1,21 @@
+Android UiAutomator server JAR 0.4.0-maxa.3
+Upstream: https://github.com/openatx/android-uiautomator-server-jar
+Source commit: d0449b9da4b32ad28bee0d3c3f561c49010acf35
+Upstream project license: MIT (u2-server-LICENSE / vendor/u2-server/LICENSE),
+copyright (c) 2015 xiaocong@gmail.com.
+The JAR project's license is independently checked, not inferred from a Rust crate.
+
+Maxa modifications: HTTP remains loopback-only; read-only PackageManager queries
+provide launchable applications and display labels via GET /maxa/packages.
+Clipboard reads distinguish authorized empty state from unreadable/non-text data;
+writes require a successful read. Clipboard contents and HTTP bodies are not logged.
+Patch and reproducible build inputs: vendor/u2-server/.
+Built artifact: vendor/u2-server/u2-0.4.0-maxa.3.jar
+SHA256: fac36217adbf518cbaf217b22e39e62f2c7cbbf988d8b5017f2ed75a3445c2ae
+Main class: com.wetest.uia2.Main (app_process; no APK installation).
+No dependency, signing or entrypoint changes. Source-archive APK version metadata may differ
+from the upstream release; this entrypoint does not reference BuildConfig.
+
+The artifact retains bundled third-party material, including LICENSE-junit.txt.
+Distribution/commercial-use changes require a separate bundled-dependency license
+review. Static binding verification does not replace the App's live loopback check.

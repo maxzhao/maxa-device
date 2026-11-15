@@ -111,6 +111,19 @@ mod desktop {
                 let data = app.path().app_local_data_dir()?;
                 let resources = app.path().resource_dir()?;
                 let backend = AppState::open(data, resources).map_err(std::io::Error::other)?;
+                let mut windows_events = backend.modules.windows_events();
+                let windows_state = backend.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        match windows_events.recv().await {
+                            Ok(event) => windows_state.windows_worker_event(&event).await,
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                let _ = windows_state.stop_control(None, None).await;
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
                 let shutdown = axum_server::Handle::new();
                 let address = std::env::var("MAXA_DEVICE_LISTEN")
                     .unwrap_or("0.0.0.0:19427".into())
@@ -222,6 +235,13 @@ mod desktop {
 }
 #[cfg(windows)]
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--windows-worker") {
+        if let Err(e) = maxa_device::windows::worker_main() {
+            eprintln!("Windows worker: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     desktop::run()
 }
 #[cfg(not(windows))]
