@@ -4,3 +4,8 @@ release/
 src-tauri/target/
 packs/*.zip
 packs/manifest.json
+/licenses/THIRD-PARTY-NOTICES.txt
+.env
+.env.*
+!.env.example
+.npmrc

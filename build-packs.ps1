@@ -1,4 +1,4 @@
-# Maintainer-only: build private Windows x64 packs from pinned official archives and source locks.
+# Build Windows x64 packs from pinned official archives and source locks.
 [CmdletBinding()]
 param(
  [Parameter(Mandatory=$true)][string]$RuntimeArchives,
@@ -23,17 +23,8 @@ Expand-Archive -LiteralPath $adbZip -DestinationPath $runtime
 $platformTools=Join-Path $runtime 'platform-tools'
 $rgHome=Join-Path $runtime 'ripgrep-15.1.0-x86_64-pc-windows-msvc'
 if(((& (Join-Path $platformTools 'adb.exe') version) -join "`n") -notmatch '37\.0\.1-15733141'){throw 'Pinned ADB runtime mismatch'}
-function Copy-CleanTree([string]$Source,[string]$Destination){
- New-Item -ItemType Directory -Force -Path $Destination|Out-Null
- foreach($entry in Get-ChildItem -LiteralPath $Source -Force){
-  if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Reparse points are not valid build inputs'}
-  if($entry.Name -in @('.git','.venv','__pycache__','.pytest_cache','.npmrc','.env') -or $entry.Name -like '.env.*' -or $entry.Extension -in @('.pyc','.pyo','.msi')){continue}
-  $target=Join-Path $Destination $entry.Name
-  if($entry.PSIsContainer){Copy-CleanTree $entry.FullName $target}else{Copy-Item -LiteralPath $entry.FullName -Destination $target}
- }
-}
 $packs=Join-Path $PSScriptRoot 'packs';New-Item -ItemType Directory -Force -Path $packs|Out-Null
-$manifest=@{format=1;buildId='0.1.0-native-packs.4';sources=$components;packs=@()}
+$manifest=@{format=1;buildId='0.1.0-native-packs.5';sources=$components;packs=@()}
 foreach($module in @('system','mobile')){
  $stage=Join-Path $build $module;New-Item -ItemType Directory $stage|Out-Null
  if($module -eq 'system'){
@@ -41,15 +32,20 @@ foreach($module in @('system','mobile')){
   $version='1'
  }
  if($module -eq 'mobile'){
-  New-Item -ItemType Directory (Join-Path $stage 'sdk')|Out-Null
-  Copy-CleanTree $platformTools (Join-Path $stage 'sdk/platform-tools')
+  $adbStage=Join-Path $stage 'sdk/platform-tools'
+  New-Item -ItemType Directory -Force -Path $adbStage|Out-Null
+  # No fastboot, filesystem utilities or MinGW runtime: the App only uses ADB.
+  foreach($name in $components.runtimeSources.adb.distributionFiles){
+   if([IO.Path]::GetFileName($name) -ne $name){throw 'ADB distribution entries must be filenames'}
+   Copy-Item -LiteralPath (Join-Path $platformTools $name) -Destination (Join-Path $adbStage $name)
+  }
   New-Item -ItemType Directory (Join-Path $stage 'helper')|Out-Null
   Copy-Item -LiteralPath $u2Jar -Destination (Join-Path $stage 'helper/u2-0.4.0-maxa.3.jar')
   New-Item -ItemType Directory (Join-Path $stage 'licenses')|Out-Null
   foreach($name in @('u2-server-LICENSE','u2-server-NOTICE','mobile-mcp-LICENSE')){
    Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('licenses/'+$name)) -Destination (Join-Path $stage ('licenses/'+$name))
   }
-  $version='1.0.17-native.5'
+  $version='1.0.17-native.6'
  }
  $files=@{};Get-ChildItem -LiteralPath $stage -Recurse -File|ForEach-Object{
   if($_.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Pack contains a reparse point'}

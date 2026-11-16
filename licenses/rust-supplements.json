@@ -1,0 +1,326 @@
+{
+  "alloc-stdlib@0.2.4": {
+    "license": "BSD-3-Clause",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/dropbox-rust-alloc-no-stdlib-ae42d22078b9-LICENSE",
+        "url": "https://github.com/dropbox/rust-alloc-no-stdlib/blob/ae42d22078b98549e987d2f03d12df7b984fde47/LICENSE",
+        "sha256": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+      }
+    ]
+  },
+  "convert_case@0.4.0": {
+    "license": "MIT",
+    "provenance": "historical package omitted license text; supplement from pinned upstream license owner, not a package source-commit claim",
+    "files": [
+      {
+        "file": "rust-supplements/rutrum-convert-case-637e1aec1717-LICENSE",
+        "url": "https://github.com/rutrum/convert-case/blob/637e1aec1717e3a4af07dff1c1dec7a4eb971b2a/LICENSE",
+        "sha256": "aed7b1758e35afa0cd0fde059d61950747ca11cd0e5e169cb21c11608daed772"
+      }
+    ]
+  },
+  "fxhash@0.2.1": {
+    "license": "Apache-2.0/MIT",
+    "selectedLicense": "Apache-2.0",
+    "provenance": "Apache-2.0 branch explicitly allowed by the locked crate manifest; original source notices and package authors retained",
+    "files": [
+      {
+        "file": "rust-supplements/Apache-2.0.txt",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      },
+      {
+        "file": "rust-supplements/fxhash-0.2.1-source-notice.txt",
+        "sha256": "5d392ff1ac69a18c9beb41720ecbfd56f7792a1ec4321428e73757d4283f5a61"
+      }
+    ]
+  },
+  "mac@0.1.1": {
+    "license": "MIT/Apache-2.0",
+    "selectedLicense": "Apache-2.0",
+    "provenance": "Apache-2.0 branch explicitly allowed by the locked crate manifest; original source notices and package authors retained",
+    "files": [
+      {
+        "file": "rust-supplements/Apache-2.0.txt",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    ]
+  },
+  "match_token@0.1.0": {
+    "license": "MIT OR Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/servo-html5ever-0e4e125b8672-COPYRIGHT",
+        "url": "https://github.com/servo/html5ever/blob/0e4e125b8672abad4ff14d1e0043d3be9305af6a/COPYRIGHT",
+        "sha256": "c6b91503fc0a9852e688b56eef715dba9a1ab4b074e86875af2471ce0163b2e5"
+      },
+      {
+        "file": "rust-supplements/servo-html5ever-0e4e125b8672-LICENSE-APACHE",
+        "url": "https://github.com/servo/html5ever/blob/0e4e125b8672abad4ff14d1e0043d3be9305af6a/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/servo-html5ever-0e4e125b8672-LICENSE-MIT",
+        "url": "https://github.com/servo/html5ever/blob/0e4e125b8672abad4ff14d1e0043d3be9305af6a/LICENSE-MIT",
+        "sha256": "86dd7f026f916daf7511e39951ad8ea8cf55a8db67ae64060dacf829761c18f3"
+      }
+    ]
+  },
+  "phf@0.8.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-81c7cc5b4864-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/81c7cc5b48649108428671d3b8ad151f6fbdb359/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf@0.10.1": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-bed01538ae57-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/bed01538ae576876f11189d541875d228acef9e8/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_codegen@0.8.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-81c7cc5b4864-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/81c7cc5b48649108428671d3b8ad151f6fbdb359/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_generator@0.8.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-81c7cc5b4864-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/81c7cc5b48649108428671d3b8ad151f6fbdb359/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_generator@0.10.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-3ea14b216655-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/3ea14b2166553ad6e7b9afe7244144f5d661b6c6/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_macros@0.10.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-3cc6f05cb079-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/3cc6f05cb07933af4cf886645d1170bdcb306b6b/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_shared@0.8.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-81c7cc5b4864-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/81c7cc5b48649108428671d3b8ad151f6fbdb359/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "phf_shared@0.10.0": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/sfackler-rust-phf-3ea14b216655-LICENSE",
+        "url": "https://github.com/sfackler/rust-phf/blob/3ea14b2166553ad6e7b9afe7244144f5d661b6c6/LICENSE",
+        "sha256": "d8870d5e2ab20fc50915b711c5aa7588131c9abcc1bcb980da1efd7486522a46"
+      }
+    ]
+  },
+  "selectors@0.24.0": {
+    "license": "MPL-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/servo-servo-e82d7868d999-LICENSE",
+        "url": "https://github.com/servo/servo/blob/e82d7868d999d84f6d59719e4c397e5252aecb85/LICENSE",
+        "sha256": "1af2d2b02d9c86030d29ed77117ca7a1b0e4b6ff35bcf8eeb124867d0f5cb59e"
+      }
+    ]
+  },
+  "unic-char-property@0.9.0": {
+    "license": "MIT/Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-COPYRIGHT.md",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/COPYRIGHT.md",
+        "sha256": "f5c342c49f3ac804f3e8e7bb62a8040a44c50d47bb36902b1abd13f66a1adf8b"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-APACHE",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-MIT",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  "unic-char-range@0.9.0": {
+    "license": "MIT/Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-COPYRIGHT.md",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/COPYRIGHT.md",
+        "sha256": "f5c342c49f3ac804f3e8e7bb62a8040a44c50d47bb36902b1abd13f66a1adf8b"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-APACHE",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-MIT",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  "unic-common@0.9.0": {
+    "license": "MIT/Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-COPYRIGHT.md",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/COPYRIGHT.md",
+        "sha256": "f5c342c49f3ac804f3e8e7bb62a8040a44c50d47bb36902b1abd13f66a1adf8b"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-APACHE",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-MIT",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  "unic-ucd-ident@0.9.0": {
+    "license": "MIT/Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-8a6ce83063d9-COPYRIGHT.md",
+        "url": "https://github.com/open-i18n/rust-unic/blob/8a6ce83063d90b91ae2ce59eddb803edd393fca9/COPYRIGHT.md",
+        "sha256": "f5c342c49f3ac804f3e8e7bb62a8040a44c50d47bb36902b1abd13f66a1adf8b"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-8a6ce83063d9-LICENSE-APACHE",
+        "url": "https://github.com/open-i18n/rust-unic/blob/8a6ce83063d90b91ae2ce59eddb803edd393fca9/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-8a6ce83063d9-LICENSE-MIT",
+        "url": "https://github.com/open-i18n/rust-unic/blob/8a6ce83063d90b91ae2ce59eddb803edd393fca9/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  "unic-ucd-version@0.9.0": {
+    "license": "MIT/Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-COPYRIGHT.md",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/COPYRIGHT.md",
+        "sha256": "f5c342c49f3ac804f3e8e7bb62a8040a44c50d47bb36902b1abd13f66a1adf8b"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-APACHE",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/open-i18n-rust-unic-5878605364af-LICENSE-MIT",
+        "url": "https://github.com/open-i18n/rust-unic/blob/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  "webview2-com@0.38.2": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/wravery-webview2-rs-b74dc5e2b394-LICENSE",
+        "url": "https://github.com/wravery/webview2-rs/blob/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+        "sha256": "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+      }
+    ]
+  },
+  "webview2-com-macros@0.8.1": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/wravery-webview2-rs-dffa41a8a46d-LICENSE",
+        "url": "https://github.com/wravery/webview2-rs/blob/dffa41a8a46d3f5565eefbff2de57d38d399f158/LICENSE",
+        "sha256": "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+      }
+    ]
+  },
+  "webview2-com-sys@0.38.2": {
+    "license": "MIT",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/wravery-webview2-rs-b74dc5e2b394-LICENSE",
+        "url": "https://github.com/wravery/webview2-rs/blob/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+        "sha256": "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+      }
+    ]
+  },
+  "yasna@0.5.2": {
+    "license": "MIT OR Apache-2.0",
+    "provenance": "crate .cargo_vcs_info.json",
+    "files": [
+      {
+        "file": "rust-supplements/qnighy-yasna.rs-b7e65f9a4c31-LICENSE-APACHE",
+        "url": "https://github.com/qnighy/yasna.rs/blob/b7e65f9a4c317494cce2d18ea02b3d6eaaea7985/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "rust-supplements/qnighy-yasna.rs-b7e65f9a4c31-LICENSE-MIT",
+        "url": "https://github.com/qnighy/yasna.rs/blob/b7e65f9a4c317494cce2d18ea02b3d6eaaea7985/LICENSE-MIT",
+        "sha256": "2a7df90e60fd5512b8bca35d3ce90e068f21c52d962855053fd1d9e2e7ca0f16"
+      }
+    ]
+  }
+}
