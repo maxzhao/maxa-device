@@ -53,10 +53,10 @@ Invoke-WebRequest $c.runtimeSources.adb.url -OutFile (Join-Path $archives 'platf
 
 npm run prepare:licenses
 npm run check:backend
-npm run tauri -- build --ci -- --locked
+./build-release.ps1
 ```
 
-`build-packs.ps1` 校验固定归档摘要，拒绝复用已有 staging 目录。Mobile 包仅保留 ADB 必需文件与许可，不打包 fastboot、文件系统工具或解释器。安装包位于 `src-tauri/target/release/bundle/nsis/`；发布时必须附带 `release/third-party-sources.tar.gz` 和分发材料，详见 [THIRD-PARTY.md](./THIRD-PARTY.md)。
+`build-packs.ps1` 校验固定归档摘要，拒绝复用已有 staging 目录。Mobile 包仅保留 ADB 必需文件与许可，不打包 fastboot、文件系统工具或解释器。`build-release.ps1` 将 Rust/native 编译路径映射为通用路径，避免在公开二进制中嵌入本机用户目录。安装包位于 `src-tauri/target/release/bundle/nsis/`；发布时必须附带 `release/third-party-sources.tar.gz` 和分发材料，详见 [THIRD-PARTY.md](./THIRD-PARTY.md)。
 
 WSL/Linux 可运行 `npm run build` 和 `npm run check:backend`。Windows 交叉构建还需要单独配置 MSVC 兼容工具链、SDK 和打包工具，不能只安装 Rust Windows target。
 
