@@ -2,7 +2,7 @@
 // Pairing verification and secrets belong only to local human interfaces; never project tickets/tokens to Agents.
 export type ModuleId = 'system' | 'windows' | 'mobile';
 export type ModulePhase = 'installed' | 'starting' | 'ready' | 'disabled' | 'failed';
-export interface ModuleStatus { id: ModuleId; phase: ModulePhase; version: string; error: string | null }
+export interface ModuleStatus { id: ModuleId; enabled: boolean; phase: ModulePhase; version: string; error: string | null }
 export interface ClientInfo { id: string; name: string; revoked: boolean }
 export interface PairRequest { id: string; clientName: string; clientIdentity: string; verificationCode: string; createdAt: number }
 export interface JobInfo {
@@ -19,7 +19,14 @@ export interface DeviceSnapshot {
   modules: ModuleStatus[]; clients: ClientInfo[]; pairing: PairRequest[];
   phones: PhoneInfo[]; controls: ControlInfo[]; jobs: JobInfo[];
 }
+export interface Appearance { startMinimized: boolean; theme: 'system' | 'light' | 'dark'; language: 'system' | 'zh-CN' | 'en' }
+export interface Settings { appearance: Appearance; autostart: boolean; copySymlinks: boolean; copySymlinksError: string | null }
 export interface Commands {
+  device_settings: { args: Record<string, never>; result: Settings };
+  device_settings_save: { args: { appearance: Appearance }; result: Settings };
+  device_autostart: { args: { enabled: boolean }; result: Settings };
+  device_copy_symlinks: { args: { enabled: boolean }; result: Settings };
+  device_developer_settings: { args: Record<string, never>; result: null };
   device_snapshot: { args: Record<string, never>; result: DeviceSnapshot };
   device_module: { args: { module: ModuleId; enabled: boolean }; result: DeviceSnapshot };
   device_pair_decide: { args: { requestId: string; accept: boolean }; result: DeviceSnapshot };

@@ -12,11 +12,15 @@ use std::{
 };
 use tokio::sync::Mutex;
 pub struct AppState {
+    pub preferences: Mutex<crate::preferences::Preferences>,
+    settings_change: Mutex<()>,
+    shutting_down: AtomicBool,
     pub identity: HostIdentity,
     pub store: Arc<Store>,
     pub modules: Arc<Modules>,
     pub jobs: Arc<Jobs>,
     pub files: Files,
+    pub transfers: crate::transfer::Transfers,
     pub artifacts: Arc<crate::artifacts::Artifacts>,
     pub data: PathBuf,
     pub service: Mutex<ServiceInfo>,
@@ -81,7 +85,8 @@ struct RecordingFiles {
 impl RecordingFiles {
     fn valid(&self, epoch: &ControlEpoch) -> bool {
         !self.control.load(Ordering::SeqCst)
-            && self.epoch == epoch.value && self.client_epoch == epoch.client
+            && self.epoch == epoch.value
+            && self.client_epoch == epoch.client
     }
 }
 struct McpFiles {
@@ -127,6 +132,7 @@ impl AppState {
         }
         let identity = HostIdentity::load(&data)?;
         let store = Arc::new(Store::open(&data.join("state.sqlite"))?);
+        let preferences = store.preferences()?;
         let files = Files::new(vec![data.clone(), resources.clone()]);
         let pairing = crate::pairing::Pairing::new(identity.public.clone());
         let modules = Modules::new(data.clone(), resources)?;
@@ -142,11 +148,15 @@ impl AppState {
             Err(e) => return Err(format!("Cannot retire paused phone state: {e}")),
         }
         Ok(Arc::new(Self {
+            preferences: Mutex::new(preferences),
+            settings_change: Mutex::new(()),
+            shutting_down: AtomicBool::new(false),
             identity,
             store,
             modules,
             jobs,
             files,
+            transfers: crate::transfer::Transfers::default(),
             artifacts,
             data: data.clone(),
             service: Mutex::new(ServiceInfo {
@@ -176,11 +186,18 @@ impl AppState {
         if !self.modules.windows_event_current(event).await {
             return;
         }
-        if !matches!(event["event"].as_str(), Some("takeover" | "control-stopped" | "worker-exit")) {
+        if !matches!(
+            event["event"].as_str(),
+            Some("takeover" | "control-stopped" | "worker-exit")
+        ) {
             return;
         }
         let mut activities = self.activities.lock().await;
-        if !self.modules.windows_event_current(event).await || event["epoch"].as_u64() != Some(self.control_epoch("windows", "desktop").await.value) { return; }
+        if !self.modules.windows_event_current(event).await
+            || event["epoch"].as_u64() != Some(self.control_epoch("windows", "desktop").await.value)
+        {
+            return;
+        }
         self.invalidate_control("windows", "desktop").await;
         activities.retain(|a| a.module != "windows");
         self.worker_owners.lock().await.remove("windows:desktop");
@@ -188,12 +205,20 @@ impl AppState {
         // if UIA/the operation thread is stuck. No replay and no module toggle.
         self.modules.release_automation("windows", "desktop").await;
     }
+    async fn module_statuses(&self) -> Vec<ModuleStatus> {
+        let selected = self.preferences.lock().await.modules.clone();
+        let mut modules = self.modules.statuses().await;
+        for module in &mut modules {
+            module.enabled = selected.get(&module.id).copied().unwrap_or(false);
+        }
+        modules
+    }
     pub async fn snapshot(&self) -> DeviceSnapshot {
         DeviceSnapshot {
             protocol_version: 2,
             identity: self.identity.public.clone(),
             service: self.service.lock().await.clone(),
-            modules: self.modules.statuses().await,
+            modules: self.module_statuses().await,
             clients: self.store.clients(),
             pairing: self.pairing.requests(),
             phones: self.phone_status().await,
@@ -217,6 +242,7 @@ impl AppState {
         Ok(())
     }
     pub async fn revoke(&self, client: &str) -> Result<()> {
+        self.transfers.cancel(Some(client), &self.store);
         self.jobs.revoke(client).await?;
         self.stop(Some(client)).await;
         Ok(())
@@ -335,7 +361,11 @@ impl AppState {
             }
         }
     }
-    async fn queued_control(&self, client: &str, call: &Invocation) -> Result<Option<ControlEpoch>> {
+    async fn queued_control(
+        &self,
+        client: &str,
+        call: &Invocation,
+    ) -> Result<Option<ControlEpoch>> {
         if call.operation != "mcp" || call.arguments["message"]["method"] != "tools/call" {
             return Ok(None);
         }
@@ -343,7 +373,15 @@ impl AppState {
         if module == "windows" {
             let mut epoch = self.control_epoch("windows", "desktop").await;
             epoch.operation_id = call.request_id.clone();
-            epoch.client = Some((client.into(), *self.client_epochs.lock().unwrap().entry(client.into()).or_default()));
+            epoch.client = Some((
+                client.into(),
+                *self
+                    .client_epochs
+                    .lock()
+                    .unwrap()
+                    .entry(client.into())
+                    .or_default(),
+            ));
             return Ok(Some(epoch));
         }
         if module == "mobile"
@@ -362,16 +400,34 @@ impl AppState {
                 .ok_or("phone transport unavailable")?;
             let mut epoch = self.control_epoch("mobile", &physical).await;
             epoch.operation_id = call.request_id.clone();
-            epoch.client = Some((client.into(), *self.client_epochs.lock().unwrap().entry(client.into()).or_default()));
+            epoch.client = Some((
+                client.into(),
+                *self
+                    .client_epochs
+                    .lock()
+                    .unwrap()
+                    .entry(client.into())
+                    .or_default(),
+            ));
             return Ok(Some(epoch));
         }
         Ok(None)
     }
     async fn check_control_epoch(&self, epoch: &ControlEpoch) -> Result<()> {
         let current = self.control_epoch(&epoch.module, &epoch.resource).await;
-        let client_stopped = epoch.client.as_ref().map(|(client, value)| {
-            *self.client_epochs.lock().unwrap().entry(client.clone()).or_default() != *value
-        }).unwrap_or(false);
+        let client_stopped = epoch
+            .client
+            .as_ref()
+            .map(|(client, value)| {
+                *self
+                    .client_epochs
+                    .lock()
+                    .unwrap()
+                    .entry(client.clone())
+                    .or_default()
+                    != *value
+            })
+            .unwrap_or(false);
         if current.value != epoch.value || client_stopped {
             return Err("CONTROL_STOPPED: old queued operation was invalidated; submit only a new explicit request".into());
         }
@@ -393,8 +449,7 @@ impl AppState {
                 .cloned()
                 .collect();
             activities.retain(|l| !(l.module == "mobile" && l.resource == physical));
-            self.release_controls(removed)
-                .await;
+            self.release_controls(removed).await;
             let stopped = self.modules.stop_phone(Some(physical)).await;
             self.recordings.lock().await.remove(physical);
             drop(activities);
@@ -407,7 +462,12 @@ impl AppState {
     pub async fn stop(&self, client: Option<&str>) {
         let mut activities = self.activities.lock().await;
         if let Some(client) = client {
-            *self.client_epochs.lock().unwrap().entry(client.into()).or_default() += 1;
+            *self
+                .client_epochs
+                .lock()
+                .unwrap()
+                .entry(client.into())
+                .or_default() += 1;
         } else {
             self.invalidate_module("windows").await;
             self.invalidate_module("mobile").await;
@@ -421,20 +481,26 @@ impl AppState {
             .cloned()
             .collect();
         activities.retain(|l| !client.map(|c| l.client_id == c).unwrap_or(true));
-        self.release_controls(removed)
-            .await;
+        self.release_controls(removed).await;
         drop(activities);
     }
     async fn release_controls(&self, activities: Vec<ControlInfo>) {
         for activity in activities {
-            if let Some(cancelled) = self.controls.lock().unwrap().remove(&format!("{}:{}", activity.module, activity.resource)) {
+            if let Some(cancelled) = self
+                .controls
+                .lock()
+                .unwrap()
+                .remove(&format!("{}:{}", activity.module, activity.resource))
+            {
                 cancelled.store(true, Ordering::SeqCst);
             }
             self.worker_owners
                 .lock()
                 .await
                 .remove(&format!("{}:{}", activity.module, activity.resource));
-            self.modules.release_automation(&activity.module, &activity.resource).await;
+            self.modules
+                .release_automation(&activity.module, &activity.resource)
+                .await;
             if activity.module == "mobile" {
                 self.recordings.lock().await.remove(&activity.resource);
             }
@@ -459,9 +525,9 @@ impl AppState {
                 .cloned()
                 .collect();
             activities.retain(|l| !(l.module == epoch.module && l.resource == epoch.resource));
-            self.invalidate_control(&epoch.module, &epoch.resource).await;
-            self.release_controls(removed)
+            self.invalidate_control(&epoch.module, &epoch.resource)
                 .await;
+            self.release_controls(removed).await;
         }
     }
     async fn interrupt_operation(&self, client: &str, chat: &str, epoch: &ControlEpoch) {
@@ -474,10 +540,68 @@ impl AppState {
         active.retain(|a| {
             !(a.id == epoch.operation_id && a.client_id == client && a.chat_id == chat)
         });
-        self.release_controls(removed)
-            .await;
+        self.release_controls(removed).await;
+    }
+    pub async fn set_appearance(&self, appearance: crate::preferences::Appearance) -> Result<()> {
+        let _change = self.settings_change.lock().await;
+        let mut current = self.preferences.lock().await;
+        let mut next = current.clone();
+        next.appearance = appearance;
+        self.store.save_preferences(&next)?;
+        *current = next;
+        Ok(())
+    }
+    pub async fn copy_symlinks_status(&self) -> (bool, Option<String>) {
+        let preferences = self.preferences.lock().await;
+        let error = crate::preferences::symlinks::configured().err().map(|message|
+            crate::preferences::native_text(preferences.appearance.language.chinese(), &message));
+        (preferences.copy_symlinks && error.is_none(), error)
+    }
+    pub async fn set_copy_symlinks(&self, enabled: bool) -> Result<()> {
+        let _change = self.settings_change.lock().await;
+        let mut current = self.preferences.lock().await;
+        let verification = if enabled { crate::preferences::symlinks::verify() } else { Ok(()) };
+        let mut next = current.clone();
+        next.copy_symlinks = enabled && verification.is_ok();
+        self.store.save_preferences(&next)?;
+        *current = next;
+        if !current.copy_symlinks { self.transfers.cancel_links(&self.store); }
+        verification.map_err(|message| crate::preferences::native_text(current.appearance.language.chinese(), &message))
+    }
+    pub async fn restore_modules(&self) {
+        let _change = self.settings_change.lock().await;
+        let selected = self.preferences.lock().await.modules.clone();
+        for (module, enabled) in selected {
+            if self.shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+            if enabled {
+                let _ = self.set_module_runtime(&module, true).await;
+            }
+        }
     }
     pub async fn set_module(&self, module: &str, enabled: bool) -> Result<()> {
+        let _change = self.settings_change.lock().await;
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("App is shutting down".into());
+        }
+        let saved = {
+            let mut current = self.preferences.lock().await;
+            let mut next = current.clone();
+            *next.modules.get_mut(module).ok_or("unknown module")? = enabled;
+            let saved = self.store.save_preferences(&next);
+            if enabled {
+                saved.as_ref().map_err(Clone::clone)?;
+            }
+            // Fail closed when disabling, even if persistence failed; report the failure.
+            *current = next;
+            saved
+        };
+        let runtime = self.set_module_runtime(module, enabled).await;
+        saved.and(runtime)
+    }
+    async fn set_module_runtime(&self, module: &str, enabled: bool) -> Result<()> {
+        if module == "system" && !enabled { self.transfers.cancel(None, &self.store); }
         if module == "system" && !enabled {
             self.jobs.set_enabled(false).await;
         }
@@ -493,8 +617,7 @@ impl AppState {
                 .cloned()
                 .collect();
             activities.retain(|l| l.module != module);
-            self.release_controls(removed)
-                .await;
+            self.release_controls(removed).await;
             let result = self.modules.set(module, false).await;
             drop(activities);
             return result;
@@ -506,11 +629,15 @@ impl AppState {
         result
     }
     pub async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        self.transfers.cancel(None, &self.store);
+        let _change = self.settings_change.lock().await;
         self.jobs.set_enabled(false).await;
         self.stop(None).await;
         self.modules.shutdown().await;
     }
     pub fn cleanup_pairing(&self) {
+        self.transfers.cleanup(&self.files, &self.store);
         self.pairing.cleanup();
     }
     pub async fn refresh_phones(&self) -> Result<()> {
@@ -589,9 +716,12 @@ impl AppState {
         }
         if call.operation == "device.status" {
             let phones = self.phone_status().await.into_iter().collect::<Vec<_>>();
-            return Ok(
-                json!({"hostId":self.identity.public.host_id,"service":self.service.lock().await.clone(),"modules":self.modules.statuses().await,"phones":phones,"trusted":true}),
-            );
+            let mut status = json!({"hostId":self.identity.public.host_id,"service":self.service.lock().await.clone(),"modules":self.module_statuses().await,"phones":phones,"trusted":true,"copyVersion":1,"copyInternalSymlinks":self.copy_symlinks_status().await.0,"maxFileBytes":crate::transfer::MAX_FILE_BYTES});
+            status.as_object_mut().unwrap().extend(crate::environment::context().as_object().unwrap().clone());
+            return Ok(status);
+        }
+        if call.operation == "copy.status" || call.operation == "copy.cancel" {
+            return self.transfers.operation(&self.files,&self.store,&client.id,&call.chat_id,&call.operation,&call.arguments);
         }
         if call.operation == "client.revoke_self" {
             self.revoke(&client.id).await?;
@@ -681,6 +811,26 @@ impl AppState {
     ) -> Result<Value> {
         let a = &call.arguments;
         match call.operation.as_str() {
+            operation if operation.starts_with("copy.") => {
+                self.modules.ready("system").await?;
+                let enabled = self.copy_symlinks_status().await.0;
+                if !enabled {
+                    self.transfers.cancel_links(&self.store);
+                    if operation != "copy.prepare" {
+                        let id = a["transferId"].as_str().ok_or("transferId required")?;
+                        if self.transfers.get(&client.id, &call.chat_id, id)?.has_links() {
+                            return Err("COPY_SYMLINKS_DISABLED".into());
+                        }
+                    }
+                }
+                let mut args = a.clone();
+                if operation == "copy.prepare" { args["symlinks"] = json!(enabled && a["symlinks"] != false); }
+                self.transfers.operation(&self.files,&self.store,&client.id,&call.chat_id,operation,&args)
+            }
+            "environment.wsl_host" => {
+                self.modules.ready("system").await?;
+                crate::environment::probe(a).await
+            }
             "file.stat" => {
                 self.modules.ready("system").await?;
                 self.files.stat(a)
@@ -965,23 +1115,28 @@ impl AppState {
                 .ok_or("tool is not in the admitted live catalog")?;
             crate::schema::validate(&tool["inputSchema"], args)?;
             if name != "mobile_batch_commands" && name != "mobile_stop_screen_recording" {
-                staged = Some(Arc::new(self.stage_mcp(client, &call.chat_id, name, &mut outgoing)?));
+                staged = Some(Arc::new(self.stage_mcp(
+                    client,
+                    &call.chat_id,
+                    name,
+                    &mut outgoing,
+                )?));
             }
             if module == "windows" {
                 if !windows_tool(name) {
                     return Err("tool not public".into());
                 }
                 if name != "ControlStatus" {
-                control = Some(
-                    self.acquire(
-                        &client.id,
-                        &call.chat_id,
-                        "windows",
-                        "desktop",
-                        epoch.ok_or("control epoch required")?,
-                    )
-                    .await?,
-                );
+                    control = Some(
+                        self.acquire(
+                            &client.id,
+                            &call.chat_id,
+                            "windows",
+                            "desktop",
+                            epoch.ok_or("control epoch required")?,
+                        )
+                        .await?,
+                    );
                 }
             } else {
                 if !mobile_tool(name) {
@@ -1123,7 +1278,9 @@ impl AppState {
                     }
                     if name == "mobile_stop_screen_recording" {
                         if let Some(recording) = recordings.get(&key) {
-                            if recording.files.client != client.id || recording.files.chat != call.chat_id {
+                            if recording.files.client != client.id
+                                || recording.files.chat != call.chat_id
+                            {
                                 return Err("PERMISSION_DENIED: recording owner".into());
                             }
                             if !recording.valid(epoch.ok_or("control epoch required")?) {
@@ -1186,12 +1343,15 @@ impl AppState {
         }
         if module == "windows" {
             outgoing["_maxaOwner"] = json!(format!("{}:{}", client.id, call.chat_id));
-            outgoing["_maxaEpoch"] = json!(epoch.map(|e|e.value).unwrap_or(0));
-            outgoing["_maxaOperation"] = json!(epoch.map(|e|e.operation_id.as_str()).unwrap_or(""));
+            outgoing["_maxaEpoch"] = json!(epoch.map(|e| e.value).unwrap_or(0));
+            outgoing["_maxaOperation"] =
+                json!(epoch.map(|e| e.operation_id.as_str()).unwrap_or(""));
         }
         let received = if recording_retrieved {
             // A new explicit stop can retry local publication, never the phone action.
-            Ok(json!({"jsonrpc":"2.0","id":message["id"],"result":{"isError":false,"content":[{"type":"text","text":"Recording already retrieved; publishing retained staging."}]}}))
+            Ok(
+                json!({"jsonrpc":"2.0","id":message["id"],"result":{"isError":false,"content":[{"type":"text","text":"Recording already retrieved; publishing retained staging."}]}}),
+            )
         } else if let Some(physical) = controlled_transport.as_deref() {
             self.modules
                 .dispatch_phone(physical, &outgoing, timeout, control.as_ref().unwrap())
@@ -1218,19 +1378,26 @@ impl AppState {
                 if stopping_recording {
                     let activities = self.activities.lock().await;
                     let still_owned = activities.iter().any(|l| {
-                        l.module == "mobile" && l.resource == key && l.client_id == client.id
+                        l.module == "mobile"
+                            && l.resource == key
+                            && l.client_id == client.id
                             && l.chat_id == call.chat_id
                     });
                     let mut recordings = self.recordings.lock().await;
-                    let retained = recordings.get_mut(&key).filter(|r| Arc::ptr_eq(&r.files, &files));
+                    let retained = recordings
+                        .get_mut(&key)
+                        .filter(|r| Arc::ptr_eq(&r.files, &files));
                     let mut owner_lost = true;
                     if let Some(recording) = retained {
                         if active && still_owned && recording.valid(epoch.unwrap()) {
                             owner_lost = false;
-                            if result.get("error").is_none() && result["result"]["isError"] != true {
+                            if result.get("error").is_none() && result["result"]["isError"] != true
+                            {
                                 recording.retrieved = true;
                                 self.finish_mcp_files(&files, client, &mut result, true);
-                                if result.get("error").is_none() && result["result"]["isError"] != true {
+                                if result.get("error").is_none()
+                                    && result["result"]["isError"] != true
+                                {
                                     recordings.remove(&key);
                                 }
                             }
@@ -1243,47 +1410,55 @@ impl AppState {
                     drop(activities);
                     if owner_lost {
                         result["result"]["isError"] = json!(true);
-                        if !result["result"]["content"].is_array() { result["result"]["content"] = json!([]); }
+                        if !result["result"]["content"].is_array() {
+                            result["result"]["content"] = json!([]);
+                        }
                         result["result"]["content"].as_array_mut().unwrap().push(json!({"type":"text","text":"CONTROL_STOPPED: recording ownership expired; no output committed."}));
                     }
                 } else {
-                let replacements = files
-                    .outputs
-                    .iter()
-                    .map(|o| {
-                        (
-                            o.stage.to_string_lossy().to_string(),
-                            "remote recording pending; download after stop".into(),
-                        )
-                    })
-                    .chain(files.private_outputs.iter().map(|p| {
-                        (
-                            p.to_string_lossy().to_string(),
-                            "remote recording pending; download after stop".into(),
-                        )
-                    }))
-                    .collect::<Vec<_>>();
-                replace_result_paths(&mut result, &replacements);
-                let activities = self.activities.lock().await;
-                let still_owned = activities.iter().any(|l| {
-                    l.module == "mobile"
-                        && l.resource == key
-                        && l.client_id == client.id
-                        && l.chat_id == call.chat_id
-                });
-                if active
-                    && still_owned
-                    && !control.as_ref().unwrap().load(Ordering::SeqCst)
-                    && (outcome_unknown
-                        || result.get("error").is_none() && result["result"]["isError"] != true)
-                {
-                    let epoch = epoch.unwrap();
-                    self.recordings.lock().await.insert(key, RecordingFiles {
-                        files, control: control.as_ref().unwrap().clone(), epoch: epoch.value,
-                        client_epoch: epoch.client.clone(), retrieved: false,
+                    let replacements = files
+                        .outputs
+                        .iter()
+                        .map(|o| {
+                            (
+                                o.stage.to_string_lossy().to_string(),
+                                "remote recording pending; download after stop".into(),
+                            )
+                        })
+                        .chain(files.private_outputs.iter().map(|p| {
+                            (
+                                p.to_string_lossy().to_string(),
+                                "remote recording pending; download after stop".into(),
+                            )
+                        }))
+                        .collect::<Vec<_>>();
+                    replace_result_paths(&mut result, &replacements);
+                    let activities = self.activities.lock().await;
+                    let still_owned = activities.iter().any(|l| {
+                        l.module == "mobile"
+                            && l.resource == key
+                            && l.client_id == client.id
+                            && l.chat_id == call.chat_id
                     });
-                }
-                drop(activities);
+                    if active
+                        && still_owned
+                        && !control.as_ref().unwrap().load(Ordering::SeqCst)
+                        && (outcome_unknown
+                            || result.get("error").is_none() && result["result"]["isError"] != true)
+                    {
+                        let epoch = epoch.unwrap();
+                        self.recordings.lock().await.insert(
+                            key,
+                            RecordingFiles {
+                                files,
+                                control: control.as_ref().unwrap().clone(),
+                                epoch: epoch.value,
+                                client_epoch: epoch.client.clone(),
+                                retrieved: false,
+                            },
+                        );
+                    }
+                    drop(activities);
                 }
             } else {
                 self.finish_mcp_files(&files, client, &mut result, active);
@@ -1326,17 +1501,34 @@ mod tests {
     async fn recording_staging_survives_failed_publication_until_owner_cleanup() {
         let (root, app, client) = fixture().await;
         let epoch = app.control_epoch("mobile", "phone1").await;
-        let token = app.acquire(&client.id, "owner", "mobile", "phone1", &epoch).await.unwrap();
+        let token = app
+            .acquire(&client.id, "owner", "mobile", "phone1", &epoch)
+            .await
+            .unwrap();
         let output_dir = root.with_extension("outputs");
         std::fs::create_dir(&output_dir).unwrap();
         let output = output_dir.join("recording.mp4");
         let mut message = json!({"params":{"arguments":{"output":output}}});
-        let files = Arc::new(app.stage_mcp(&client, "owner", "mobile_start_screen_recording", &mut message).unwrap());
+        let files = Arc::new(
+            app.stage_mcp(
+                &client,
+                "owner",
+                "mobile_start_screen_recording",
+                &mut message,
+            )
+            .unwrap(),
+        );
         let stage = files.outputs[0].stage.clone();
-        app.recordings.lock().await.insert("phone1".into(), RecordingFiles {
-            files: files.clone(), control: token.clone(), epoch: epoch.value,
-            client_epoch: epoch.client.clone(), retrieved: true,
-        });
+        app.recordings.lock().await.insert(
+            "phone1".into(),
+            RecordingFiles {
+                files: files.clone(),
+                control: token.clone(),
+                epoch: epoch.value,
+                client_epoch: epoch.client.clone(),
+                retrieved: true,
+            },
+        );
         std::fs::write(&stage, b"owned recording bytes").unwrap();
         // A real destination conflict makes publication fail after native retrieval.
         std::fs::write(&output, b"user changed destination").unwrap();
@@ -1347,7 +1539,8 @@ mod tests {
         let recordings = app.recordings.lock().await;
         let retained = &recordings["phone1"];
         assert!(retained.retrieved && retained.valid(&epoch) && stage.exists());
-        let mut stale = epoch.clone(); stale.value += 1;
+        let mut stale = epoch.clone();
+        stale.value += 1;
         assert!(!retained.valid(&stale));
         drop(recordings);
         app.stop(Some(&client.id)).await;
@@ -1381,11 +1574,15 @@ mod tests {
         assert!(!app
             .acquire(&client.id, "owner", "windows", "desktop", &fresh)
             .await
-            .unwrap().load(Ordering::SeqCst));
+            .unwrap()
+            .load(Ordering::SeqCst));
         assert!(app.store.active(&client.id).is_ok());
         app.set_module("windows", false).await.unwrap();
         let disabled = app.control_epoch("windows", "desktop").await;
-        assert!(app.acquire(&client.id, "owner", "windows", "desktop", &disabled).await.is_err());
+        assert!(app
+            .acquire(&client.id, "owner", "windows", "desktop", &disabled)
+            .await
+            .is_err());
         drop(app);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1427,12 +1624,19 @@ mod tests {
         assert!(latest.load(Ordering::SeqCst));
         assert!(!t2.load(Ordering::SeqCst));
         let after_stop = app.control_epoch("mobile", "phone1").await;
-        assert!(app.acquire(&client.id, "one", "mobile", "phone1", &after_stop).await.is_ok());
+        assert!(app
+            .acquire(&client.id, "one", "mobile", "phone1", &after_stop)
+            .await
+            .is_ok());
         app.remove_phone("phone1").await.unwrap();
         assert!(app.phone_status().await[0].removed);
         assert!(!t2.load(Ordering::SeqCst));
         let removed_epoch = app.control_epoch("mobile", "phone1").await;
-        assert!(app.acquire(&client.id, "one", "mobile", "phone1", &removed_epoch).await.unwrap_err().contains("PHONE_REMOVED"));
+        assert!(app
+            .acquire(&client.id, "one", "mobile", "phone1", &removed_epoch)
+            .await
+            .unwrap_err()
+            .contains("PHONE_REMOVED"));
         assert!(app.check_control_epoch(&next).await.is_err());
         app.stop(None).await;
         drop(app);
@@ -1440,7 +1644,10 @@ mod tests {
         let reopened = AppState::open(root.clone(), root.join("resources")).unwrap();
         assert!(reopened.phone_status().await[0].removed);
         assert!(!root.join("paused-phones.json").exists());
-        assert!(serde_json::to_value(&reopened.phone_status().await[0]).unwrap().get("controlBlocked").is_none());
+        assert!(serde_json::to_value(&reopened.phone_status().await[0])
+            .unwrap()
+            .get("controlBlocked")
+            .is_none());
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1488,18 +1695,35 @@ mod tests {
     async fn trusted_client_stop_cancels_its_queued_generation_only() {
         let (root, app, client) = fixture().await;
         let call = Invocation {
-            request_id: id(), chat_id: "owner".into(), operation: "mcp".into(),
+            request_id: id(),
+            chat_id: "owner".into(),
+            operation: "mcp".into(),
             arguments: json!({"module":"windows","message":{"method":"tools/call"}}),
         };
         let active = app.control_epoch("windows", "desktop").await;
-        let token = app.acquire(&client.id, "owner", "windows", "desktop", &active).await.unwrap();
-        let queued = app.queued_control(&client.id, &call).await.unwrap().unwrap();
-        let other = app.queued_control("other-client", &call).await.unwrap().unwrap();
+        let token = app
+            .acquire(&client.id, "owner", "windows", "desktop", &active)
+            .await
+            .unwrap();
+        let queued = app
+            .queued_control(&client.id, &call)
+            .await
+            .unwrap()
+            .unwrap();
+        let other = app
+            .queued_control("other-client", &call)
+            .await
+            .unwrap()
+            .unwrap();
         app.stop_control(Some(&client.id), None).await.unwrap();
         assert!(token.load(Ordering::SeqCst));
         assert!(app.check_control_epoch(&queued).await.is_err());
         app.check_control_epoch(&other).await.unwrap();
-        let fresh = app.queued_control(&client.id, &call).await.unwrap().unwrap();
+        let fresh = app
+            .queued_control(&client.id, &call)
+            .await
+            .unwrap()
+            .unwrap();
         app.check_control_epoch(&fresh).await.unwrap();
         app.modules.ready("windows").await.unwrap();
         app.modules.ready("mobile").await.unwrap();

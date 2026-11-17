@@ -4,7 +4,10 @@ use serde_json::{json, Value};
 use std::{ffi::c_void, ptr::null_mut};
 use windows_sys::{
     core::GUID,
-    Win32::{Foundation::HWND, System::Com::*},
+    Win32::{
+        Foundation::HWND,
+        System::{Com::*, SystemInformation::OSVERSIONINFOW},
+    },
 };
 fn guid(s: &str) -> GUID {
     let g = windows::core::GUID::try_from(s.trim_matches(['{', '}'])).expect("constant GUID");
@@ -101,25 +104,16 @@ impl Drop for Com {
         }
     }
 }
-#[repr(C)]
-struct Version {
-    size: u32,
-    major: u32,
-    minor: u32,
-    build: u32,
-    platform: u32,
-    service: [u16; 128],
-}
 #[link(name = "ntdll")]
 extern "system" {
-    fn RtlGetVersion(version: *mut Version) -> i32;
+    fn RtlGetVersion(version: *mut OSVERSIONINFOW) -> i32;
 }
 pub fn execute(mode: &str, hwnd: Option<HWND>, requested: Option<&str>) -> Result<Value, String> {
     unsafe {
-        let mut version: Version = std::mem::zeroed();
-        version.size = std::mem::size_of::<Version>() as u32;
+        let mut version: OSVERSIONINFOW = std::mem::zeroed();
+        version.dwOSVersionInfoSize = std::mem::size_of::<OSVERSIONINFOW>() as u32;
         check(RtlGetVersion(&mut version))?;
-        let (internal_iid, desktop_iid) = match version.build {
+        let (internal_iid, desktop_iid) = match version.dwBuildNumber {
             26100.. => (
                 "{53F5CA0B-158F-4124-900C-057158060B27}",
                 "{3F07F4BE-B107-441A-AF0F-39D82529072C}",
@@ -135,7 +129,7 @@ pub fn execute(mode: &str, hwnd: Option<HWND>, requested: Option<&str>) -> Resul
             _ => {
                 return Err(format!(
                     "UNSUPPORTED: virtual desktop Windows build {}",
-                    version.build
+                    version.dwBuildNumber
                 ))
             }
         };

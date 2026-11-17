@@ -12,6 +12,8 @@ impl Store {
 CREATE TABLE IF NOT EXISTS clients(id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS requests(client TEXT NOT NULL, id TEXT NOT NULL, chat TEXT NOT NULL, hash TEXT NOT NULL, state TEXT NOT NULL, result TEXT, expires INTEGER NOT NULL, PRIMARY KEY(client,id));
         CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, client TEXT NOT NULL, chat TEXT NOT NULL, request TEXT NOT NULL, state TEXT NOT NULL, code INTEGER, created INTEGER NOT NULL, expires INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS copy_temps(path TEXT PRIMARY KEY);
         PRAGMA user_version=2;
         UPDATE requests SET state='unknown' WHERE state='running';
         UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running','cancel_requested');").map_err(|e| e.to_string())?;
@@ -30,7 +32,54 @@ CREATE TABLE IF NOT EXISTS clients(id TEXT PRIMARY KEY, name TEXT NOT NULL, toke
             db.execute_batch("ALTER TABLE clients DROP COLUMN grants;")
                 .map_err(|e| format!("trusted-client migration: {e}"))?;
         }
+        let abandoned = {
+            let mut q = db.prepare("SELECT path FROM copy_temps").map_err(|e| e.to_string())?;
+            let rows = q.query_map([], |r| r.get::<_, String>(0)).map_err(|e|e.to_string())?;
+            rows.collect::<std::result::Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+        };
+        for path in abandoned {
+            let path = std::path::Path::new(&path);
+            let owned = path.file_name().and_then(|v|v.to_str()).and_then(|v|v.strip_prefix(".maxa-copy-")).and_then(|v|v.strip_suffix(".tmp")).is_some_and(|v|uuid::Uuid::parse_str(v).is_ok());
+            if owned {
+                match crate::transfer::remove_temp(path) {
+                    Ok(()) => (),
+                    Err(e) if e.kind()==std::io::ErrorKind::NotFound => (),
+                    Err(_) => continue,
+                }
+                db.execute("DELETE FROM copy_temps WHERE path=?1",[path.to_string_lossy().as_ref()]).map_err(|e|e.to_string())?;
+            }
+        }
         Ok(Self(Mutex::new(db)))
+    }
+    pub fn copy_temp(&self, path: &Path, add: bool) -> Result<()> {
+        self.0.lock().unwrap().execute(if add { "INSERT OR IGNORE INTO copy_temps VALUES(?1)" } else { "DELETE FROM copy_temps WHERE path=?1" },[path.to_str().ok_or("NON_UTF8_COPY_PATH")?]).map_err(|e|e.to_string())?;
+        Ok(())
+    }
+    pub fn preferences(&self) -> Result<crate::preferences::Preferences> {
+        let text: Option<String> = self
+            .0
+            .lock()
+            .unwrap()
+            .query_row("SELECT value FROM preferences WHERE key='app'", [], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let value: crate::preferences::Preferences = match text {
+            Some(text) => serde_json::from_str(&text)
+                .map_err(|e| format!("Invalid saved preferences: {e}"))?,
+            None => Default::default(),
+        };
+        value.validate()?;
+        Ok(value)
+    }
+    pub fn save_preferences(&self, value: &crate::preferences::Preferences) -> Result<()> {
+        value.validate()?;
+        let text = serde_json::to_string(value).map_err(|e| e.to_string())?;
+        self.0.lock().unwrap().execute(
+            "INSERT INTO preferences VALUES('app',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [text]
+        ).map_err(|e| e.to_string())?;
+        Ok(())
     }
     pub fn add_client(&self, name: &str, token: &str) -> Result<String> {
         let id = id();

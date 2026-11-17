@@ -97,6 +97,7 @@ pub struct Modules {
     mobile: crate::mobile::Mobile,
     windows_events: tokio::sync::broadcast::Sender<Value>,
     pub adb_port: u16,
+    pub chinese: std::sync::atomic::AtomicBool,
 }
 fn valid_module(id: &str) -> bool {
     matches!(id, "system" | "windows" | "mobile")
@@ -125,6 +126,7 @@ impl Modules {
                     id.into(),
                     ModuleStatus {
                         id: id.into(),
+                        enabled: false,
                         phase: "disabled".into(),
                         version: String::new(),
                         error: None,
@@ -141,11 +143,28 @@ impl Modules {
             mobile: crate::mobile::Mobile::default(),
             windows_events: tokio::sync::broadcast::channel(64).0,
             adb_port: free_port()?,
+            chinese: std::sync::atomic::AtomicBool::new(
+                crate::preferences::Language::System.chinese(),
+            ),
         }))
     }
     #[cfg(test)]
     pub(crate) async fn ready_for_control_test(&self, module: &str) {
         self.states.lock().await.get_mut(module).unwrap().phase = "ready".into();
+    }
+    pub async fn set_language(&self, chinese: bool) -> Result<()> {
+        self.chinese
+            .store(chinese, std::sync::atomic::Ordering::SeqCst);
+        let worker = self
+            .running
+            .lock()
+            .await
+            .get("windows")
+            .and_then(|r| r.windows.clone());
+        if let Some(worker) = worker {
+            worker.set_language(chinese).await?;
+        }
+        Ok(())
     }
     pub async fn statuses(&self) -> Vec<ModuleStatus> {
         let mut x: Vec<_> = self.states.lock().await.values().cloned().collect();
@@ -492,6 +511,9 @@ impl Modules {
             }
             return Err(e);
         }
+        client
+            .set_language(self.chinese.load(std::sync::atomic::Ordering::SeqCst))
+            .await?;
         running.windows = Some(client);
         self.running.lock().await.insert("windows".into(), running);
         Ok(())

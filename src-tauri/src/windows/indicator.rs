@@ -20,7 +20,10 @@ pub struct Indicator {
     pub excluded: bool,
 }
 impl Indicator {
-    pub unsafe fn show() -> Result<Self, String> {
+    pub unsafe fn show(chinese: bool) -> Result<Self, String> {
+        let title = crate::preferences::native_text(chinese, "AI 控制中");
+        let hint =
+            crate::preferences::native_text(chinese, "移动鼠标或按 Ctrl+Alt+Shift+Backspace 接管");
         let class = wide("MaxaAIControlIndicator");
         let instance = GetModuleHandleW(null());
         let wc = WNDCLASSW {
@@ -64,7 +67,7 @@ impl Indicator {
                     | WS_EX_NOACTIVATE
                     | WS_EX_TOOLWINDOW,
                 class.as_ptr(),
-                wide("AI 控制中").as_ptr(),
+                wide(&title).as_ptr(),
                 WS_POPUP,
                 rect.left,
                 rect.top,
@@ -144,8 +147,8 @@ impl Indicator {
                 DEFAULT_PITCH as u32,
                 wide("Microsoft YaHei UI").as_ptr(),
             );
-            let first = wide("AI 控制中");
-            let second = wide("  移动鼠标或按 Ctrl+Alt+Shift+Backspace 接管");
+            let first = wide(&title);
+            let second = wide(&format!("  {hint}"));
             let mut a: SIZE = std::mem::zeroed();
             let mut b: SIZE = std::mem::zeroed();
             let old_font = SelectObject(dc, bold);

@@ -39,6 +39,7 @@ struct State {
     input_session: Option<u32>,
 }
 enum Command {
+    Language(bool),
     Begin(String, u64, mpsc::Sender<Result<(), String>>),
     End(u64),
     Takeover,
@@ -128,6 +129,9 @@ impl Coordinator {
             Ok(result) => result,
             Err(panic) => std::panic::resume_unwind(panic),
         }
+    }
+    pub fn set_language(&self, chinese: bool) -> Result<(), String> {
+        self.post(Command::Language(chinese))
     }
     pub fn operation_started(&self) {
         self.busy.store(true, Ordering::SeqCst);
@@ -405,12 +409,33 @@ impl Coordinator {
         }
         self.heartbeat.store(now(), Ordering::SeqCst);
         let _ = ready.send(Ok(()));
+        let mut chinese = crate::preferences::Language::System.chinese();
+        let mut locale_changed = false;
         let mut indicator: Option<Indicator> = None;
         let mut capture_at: Option<u64> = None;
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             if msg.message == COMMAND {
                 while let Ok(cmd) = rx.try_recv() {
                     match cmd {
+                        Command::Language(value) => {
+                            if chinese != value {
+                                chinese = value;
+                                locale_changed = true;
+                                if indicator.is_some() && capture_at.is_none() {
+                                    match Indicator::show(chinese) {
+                                        Ok(i) => {
+                                            indicator = Some(i);
+                                            locale_changed = false;
+                                        }
+                                        Err(e) => {
+                                            self.fail(e);
+                                            self.cancel(false);
+                                            indicator = None;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         Command::CaptureBegin(reply) => {
                             if let Some(i) = indicator.as_ref().filter(|i| !i.excluded) {
                                 self.deadline.store(0, Ordering::SeqCst);
@@ -434,6 +459,21 @@ impl Coordinator {
                                 at == self.physical_sequence.load(Ordering::SeqCst)
                             });
                             if unchanged && self.state.lock().unwrap().active {
+                                if locale_changed {
+                                    match Indicator::show(chinese) {
+                                        Ok(i) => {
+                                            indicator = Some(i);
+                                            locale_changed = false;
+                                        }
+                                        Err(e) => {
+                                            self.fail(e.clone());
+                                            self.cancel(false);
+                                            indicator = None;
+                                            let _ = reply.send(Err(e));
+                                            continue;
+                                        }
+                                    }
+                                }
                                 if let Some(i) = indicator.as_ref() {
                                     i.reveal();
                                 }
@@ -503,7 +543,7 @@ impl Coordinator {
                                 continue;
                             }
                             if indicator.is_none() {
-                                match Indicator::show() {
+                                match Indicator::show(chinese) {
                                     Ok(i) => indicator = Some(i),
                                     Err(e) => {
                                         self.end();

@@ -141,7 +141,7 @@ fn version(path: &Path) -> Result<String> {
     }
 }
 #[cfg(windows)]
-fn replace(tmp: &Path, path: &Path) -> Result<()> {
+pub(crate) fn replace(tmp: &Path, path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
@@ -162,7 +162,7 @@ fn replace(tmp: &Path, path: &Path) -> Result<()> {
     }
 }
 #[cfg(not(windows))]
-fn replace(tmp: &Path, path: &Path) -> Result<()> {
+pub(crate) fn replace(tmp: &Path, path: &Path) -> Result<()> {
     fs::rename(tmp, path).map_err(|e| e.to_string())
 }
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
@@ -237,6 +237,17 @@ impl Files {
     }
     pub fn check(&self, path: &Path, write: bool) -> Result<()> {
         self.guard(path, write).map(|_| ())
+    }
+    // Copy alone may inspect/replace a symlink leaf; never follow it or relax parent guards.
+    pub(crate) fn copy_link(&self, path: &Path, write: bool) -> Result<Guarded> {
+        clean_absolute(path)?;
+        let parent = path.parent().ok_or("COPY_PARENT_MISSING")?;
+        let pinned = self.guard(parent, false)?;
+        let actual = resolved(parent)?.join(path.file_name().ok_or("COPY_LINK_NAME")?);
+        if self.protected.iter().any(|root| under(&actual, root) || (write && under(root, &actual))) {
+            return Err("INTERNAL_PATH_PROTECTED".into());
+        }
+        Ok(Guarded { path: path.into(), _handles: pinned._handles })
     }
     pub fn read(&self, args: &Value) -> Result<Value> {
         let _serial = self.serial.lock().unwrap();

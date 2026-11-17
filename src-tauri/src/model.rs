@@ -21,6 +21,8 @@ pub struct PairRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ModuleStatus {
     pub id: String,
+    #[serde(default)]
+    pub enabled: bool,
     pub phase: String,
     pub version: String,
     pub error: Option<String>,

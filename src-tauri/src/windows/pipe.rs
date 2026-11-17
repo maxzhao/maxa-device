@@ -122,6 +122,10 @@ impl Client {
         .await
         .map_err(|_| "Windows worker startup timed out".to_string())?
     }
+    pub async fn set_language(&self, chinese: bool) -> Result<()> {
+        let mut input = self.input.lock().await;
+        Self::write(&mut input, json!({"type":"locale", "chinese":chinese})).await
+    }
     async fn cancel_generation(&self, generation: u64) -> Result<()> {
         let mut input = self.input.lock().await;
         Self::write(&mut input, json!({"type":"cancel","generation":generation})).await

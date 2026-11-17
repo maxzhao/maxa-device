@@ -1,6 +1,6 @@
 use crate::{model::*, state::AppState};
 use axum::{
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -98,6 +98,127 @@ async fn artifact(
         Err(e) => error(e),
     }
 }
+fn copy_owner(app: &AppState, headers: &HeaderMap) -> Result<(ClientInfo, String)> {
+    if headers
+        .get("maxa-device-protocol")
+        .and_then(|v| v.to_str().ok())
+        != Some("2")
+    {
+        return Err("PROTOCOL_MISMATCH".into());
+    }
+    let client = auth(app, headers)?;
+    let chat: String = serde_json::from_str(
+        headers
+            .get("maxa-device-chat")
+            .and_then(|v| v.to_str().ok())
+            .ok_or("copy chat required")?,
+    )
+    .map_err(|_| "invalid copy chat")?;
+    if chat.is_empty() {
+        return Err("copy chat required".into());
+    }
+    Ok((client, chat))
+}
+async fn copy_download(
+    State(app): State<Arc<AppState>>,
+    Path((id, index)): Path<(String, usize)>,
+    headers: HeaderMap,
+) -> Response {
+    let prepared = async {
+        let (client, chat) = copy_owner(&app, &headers)?;
+        app.modules.ready("system").await?;
+        let session = app.transfers.get(&client.id, &chat, &id)?;
+        let source = session.source(&app.files, index)?;
+        Ok::<_, String>((client, source))
+    }
+    .await;
+    let (client, source) = match prepared {
+        Ok(v) => v,
+        Err(e) => return error(e),
+    };
+    let file = match source.file.try_clone() {
+        Ok(v) => v,
+        Err(e) => return error(e.to_string()),
+    };
+    let mut reader = tokio::fs::File::from_std(file);
+    let length = source.expected();
+    let stream = async_stream::try_stream! {
+        use tokio::io::AsyncReadExt;
+        use sha2::{Digest,Sha256};
+        let failure=|e:String|std::io::Error::other(e);
+        let mut buffer=vec![0u8;crate::transfer::BUFFER_BYTES];let mut bytes=0u64;let mut hash=Sha256::new();
+        loop {
+            source.check().map_err(failure)?;
+            app.store.active(&client.id).map_err(failure)?;
+            app.modules.ready("system").await.map_err(failure)?;
+            let n=reader.read(&mut buffer).await?;if n==0{break}
+            bytes+=n as u64;if bytes>length{Err(std::io::Error::other("COPY_SOURCE_CHANGED"))?;}
+            hash.update(&buffer[..n]);
+            yield axum::body::Bytes::copy_from_slice(&buffer[..n]);
+        }
+        source.finish(bytes,format!("{:x}",hash.finalize())).map_err(failure)?;
+    };
+    let stream: std::pin::Pin<
+        Box<
+            dyn futures_util::Stream<Item = std::result::Result<axum::body::Bytes, std::io::Error>>
+                + Send,
+        >,
+    > = Box::pin(stream);
+    // Chunked framing is intentional: source validation must finish before a successful EOF.
+    (
+        [("content-type", "application/octet-stream")],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response()
+}
+async fn copy_upload(
+    State(app): State<Arc<AppState>>,
+    Path((id, index)): Path<(String, usize)>,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> Response {
+    use futures_util::StreamExt;
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncWriteExt;
+    let result = async {
+        let (client, chat) = copy_owner(&app, &headers)?;
+        app.modules.ready("system").await?;
+        let session = app.transfers.get(&client.id, &chat, &id)?;
+        let destination = session.destination(&app.files, &app.store, index)?;
+        let file = destination.file.try_clone().map_err(|e| e.to_string())?;
+        let mut writer = tokio::fs::File::from_std(file);
+        let mut hash = Sha256::new();
+        let mut bytes = 0u64;
+        let mut stream = body.into_data_stream();
+        loop {
+            destination.check()?;
+            app.store.active(&client.id)?;
+            app.modules.ready("system").await?;
+            let chunk = tokio::select! {
+                value=stream.next()=>value,
+                _=tokio::time::sleep(std::time::Duration::from_millis(250))=>continue,
+            };
+            let Some(chunk) = chunk else { break };
+            let chunk = chunk.map_err(|e| e.to_string())?;
+            bytes = bytes
+                .checked_add(chunk.len() as u64)
+                .ok_or("COPY_SIZE_OVERFLOW")?;
+            if bytes > destination.expected() || bytes > crate::transfer::MAX_FILE_BYTES {
+                return Err("COPY_SIZE_MISMATCH".into());
+            }
+            writer.write_all(&chunk).await.map_err(|e| e.to_string())?;
+            hash.update(&chunk);
+        }
+        writer.flush().await.map_err(|e| e.to_string())?;
+        drop(writer);
+        destination.finish(bytes, format!("{:x}", hash.finalize()))
+    }
+    .await;
+    match result {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => error(e),
+    }
+}
 pub async fn serve(
     app: Arc<AppState>,
     address: SocketAddr,
@@ -126,6 +247,7 @@ pub async fn serve(
         )
         .route("/v1/invoke", post(invoke))
         .route("/v1/artifact", post(artifact))
+        .route("/v1/copy/{id}/{index}", get(copy_download).put(copy_upload))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(app.clone());
     let listener = std::net::TcpListener::bind(address).map_err(|e| e.to_string())?;

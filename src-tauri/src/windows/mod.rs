@@ -102,6 +102,11 @@ pub fn worker_main() -> Result<(), String> {
             }
         };
         match v["type"].as_str() {
+            Some("locale") => {
+                if let Some(chinese) = v["chinese"].as_bool() {
+                    coordinator.set_language(chinese)?;
+                }
+            }
             Some("cancel") => {
                 if let Some(generation) = v["generation"].as_u64() {
                     coordinator.cancel_generation(generation);
