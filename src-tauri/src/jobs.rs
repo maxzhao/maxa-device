@@ -181,6 +181,8 @@ impl Jobs {
                 .and_then(Value::as_str)
                 .ok_or("absolute cwd required")?,
         );
+        #[cfg(target_os="android")]
+        crate::android::path_arg(cwd.to_str().ok_or("INVALID_ARGUMENT: UTF-8 Android cwd required")?)?;
         if !cwd.is_absolute() || !cwd.is_dir() {
             return Err("cwd must be an accessible absolute target directory".into());
         }
@@ -217,7 +219,9 @@ impl Jobs {
             }
             #[cfg(windows)]
             let shell = std::env::var("COMSPEC").unwrap_or("cmd.exe".into());
-            #[cfg(not(windows))]
+            #[cfg(target_os = "android")]
+            let shell = crate::android::shell()?;
+            #[cfg(all(not(windows), not(target_os = "android")))]
             let shell = "/bin/sh".to_string();
             let mut c = command(shell);
             #[cfg(windows)]
@@ -229,6 +233,8 @@ impl Jobs {
         };
         cmd.current_dir(cwd).stdin(std::process::Stdio::null());
         if detach {
+            #[cfg(unix)]
+            cmd.process_group(0);
             cmd.kill_on_drop(false)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null());
@@ -282,6 +288,8 @@ impl Jobs {
                 return Err(e);
             }
         };
+        #[cfg(unix)]
+        let pgid = child.id().ok_or("missing process group")? as i32;
         let (tx, rx) = oneshot::channel();
         running
             .entries
@@ -305,8 +313,8 @@ impl Jobs {
         }
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        let out_task = tokio::spawn(capture(stdout, tokio::fs::File::from_std(out)));
-        let err_task = tokio::spawn(capture(stderr, tokio::fs::File::from_std(err)));
+        let mut out_task = tokio::spawn(capture(stdout, tokio::fs::File::from_std(out)));
+        let mut err_task = tokio::spawn(capture(stderr, tokio::fs::File::from_std(err)));
         let this = self.clone();
         let jid = job.id.clone();
         tokio::spawn(async move {
@@ -321,19 +329,28 @@ impl Jobs {
             };
             let (state, code) = tokio::select! {
              exit=child.wait()=>match exit{Ok(s)=>(if s.success(){"succeeded"}else{"failed"},s.code()),Err(_)=>("unknown",None)},
-             _=rx=>{#[cfg(windows)]let tree_stopped=tree.as_ref().map(|t|t.terminate()).unwrap_or(false);#[cfg(not(windows))]let tree_stopped=true;let _=child.kill().await;let confirmed=child.wait().await.is_ok();(if tree_stopped&&confirmed{"cancelled"}else{"unknown"},None)},
-             _=timer=>{#[cfg(windows)]let tree_stopped=tree.as_ref().map(|t|t.terminate()).unwrap_or(false);#[cfg(not(windows))]let tree_stopped=true;let _=child.kill().await;let confirmed=child.wait().await.is_ok();(if tree_stopped&&confirmed{"timed_out"}else{"unknown"},None)},
+             _=rx=>{#[cfg(windows)]let tree_stopped=tree.as_ref().map(|t|t.terminate()).unwrap_or(false);#[cfg(unix)]let tree_stopped=terminate_group(&mut child,pgid).await;#[cfg(windows)]let _=child.kill().await;let confirmed=child.wait().await.is_ok();(if tree_stopped&&confirmed{"cancelled"}else{"unknown"},None)},
+             _=timer=>{#[cfg(windows)]let tree_stopped=tree.as_ref().map(|t|t.terminate()).unwrap_or(false);#[cfg(unix)]let tree_stopped=terminate_group(&mut child,pgid).await;#[cfg(windows)]let _=child.kill().await;let confirmed=child.wait().await.is_ok();(if tree_stopped&&confirmed{"timed_out"}else{"unknown"},None)},
             };
+            #[cfg(unix)]
+            let state = if !matches!(state,"cancelled"|"timed_out"|"unknown") && group_has_live_members(pgid) {
+                // Background work must use detach. Do not orphan descendants when the leader exits.
+                let _=terminate_group(&mut child,pgid).await;
+                "unknown"
+            } else {state};
             #[cfg(windows)]
             drop(tree.take());
-            let out = out_task.await;
-            let err = err_task.await;
-            let final_state = if out.as_ref().map(|v| v.is_ok()).unwrap_or(false)
-                && err.as_ref().map(|v| v.is_ok()).unwrap_or(false)
+            // Escaped descendants can keep inherited pipes open. Never hang finalization.
+            let out = tokio::time::timeout(std::time::Duration::from_secs(2), &mut out_task).await;
+            let err = tokio::time::timeout(std::time::Duration::from_secs(2), &mut err_task).await;
+            if out.is_err() {out_task.abort();}
+            if err.is_err() {err_task.abort();}
+            let final_state = if out.as_ref().map(|v| matches!(v, Ok(Ok(())))).unwrap_or(false)
+                && err.as_ref().map(|v| matches!(v, Ok(Ok(())))).unwrap_or(false)
             {
                 state
             } else {
-                "failed"
+                "unknown"
             };
             let _ = this.store.job_state(&jid, final_state, code);
             this.running.lock().await.entries.remove(&jid);
@@ -447,4 +464,62 @@ async fn capture(
         f.write_all(&buf[..n]).await.map_err(|e| e.to_string())?;
     }
     f.sync_all().await.map_err(|e| e.to_string())
+}
+
+#[cfg(unix)]
+async fn terminate_group(child: &mut tokio::process::Child, pgid: i32) -> bool {
+    if pgid <= 1 { return false; }
+    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) { return false; }
+    let _ = child.wait().await;
+    for _ in 0..100 {
+        if !group_has_live_members(pgid) { return true; }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    false
+}
+#[cfg(unix)]
+fn group_has_live_members(pgid: i32) -> bool {
+    if unsafe {libc::kill(-pgid, 0)} != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) { return false; }
+    // Linux/Android can retain orphan zombies until init reaps them; zombies are not live.
+    #[cfg(any(target_os="linux",target_os="android"))]
+    {
+        let Ok(entries) = std::fs::read_dir("/proc") else {return true};
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().parse::<u32>().is_err() {continue;}
+            use std::os::unix::fs::MetadataExt;
+            // Other Android app UIDs are outside our process group and may hide /proc.
+            if let Ok(meta)=entry.metadata() { if meta.uid()!=unsafe {libc::getuid()} {continue;} }
+            let stat = match std::fs::read_to_string(entry.path().join("stat")) {
+                Ok(s) => s,
+                Err(e) if e.kind()==std::io::ErrorKind::NotFound => continue,
+                Err(_) => return true,
+            };
+            let Some((_, fields)) = stat.rsplit_once(") ") else {return true};
+            let f: Vec<_> = fields.split_whitespace().collect();
+            if f.get(2).and_then(|s|s.parse::<i32>().ok()) == Some(pgid) && !matches!(f.first(), Some(&"Z" | &"X")) {return true;}
+        }
+        return false;
+    }
+    #[cfg(not(any(target_os="linux",target_os="android")))]
+    true
+}
+
+#[cfg(all(test, unix))]
+#[tokio::test]
+async fn process_group_cancel_and_timeout_stop_grandchildren() {
+    for timeout in [false,true] {
+        let (root,app,client,mut call)=crate::lifecycle_tests::fixture().await;
+        call.arguments=serde_json::json!({"command":"/bin/sh","args":["-c","sleep 60 & echo $$; wait"],"cwd":root,"timeout":if timeout {0.3} else {60.}});
+        let launched=app.jobs.launch(&client,&call).await.unwrap();let id=launched["jobId"].as_str().unwrap();
+        let stdout=root.join("jobs").join(id).join("stdout");
+        let pgid=tokio::time::timeout(std::time::Duration::from_secs(3),async {
+            loop {if let Ok(s)=std::fs::read_to_string(&stdout) {if let Ok(p)=s.trim().parse::<i32>() {break p;}}tokio::time::sleep(std::time::Duration::from_millis(10)).await;}
+        }).await.unwrap();
+        if !timeout {app.jobs.cancel(&client.id,&call.chat_id,id).await.unwrap();}
+        let state=tokio::time::timeout(std::time::Duration::from_secs(10),async {
+            loop {let state=app.store.job(id,&client.id,&call.chat_id).unwrap().state;if !matches!(state.as_str(),"running"|"cancel_requested") {break state;}tokio::time::sleep(std::time::Duration::from_millis(20)).await;}
+        }).await.unwrap();
+        assert_eq!(state,if timeout {"timed_out"} else {"cancelled"});assert!(!group_has_live_members(pgid));
+        drop(app);std::fs::remove_dir_all(root).unwrap();
+    }
 }

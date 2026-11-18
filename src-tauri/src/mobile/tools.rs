@@ -13,11 +13,30 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn string<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
+pub(crate) fn string<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args[key].as_str().ok_or_else(|| format!("{key} required"))
 }
 fn text(s: impl Into<String>) -> Vec<Value> {
     vec![json!({"type":"text","text":s.into()})]
+}
+// Shared success wording for the ADB and Termux companion backends.
+pub(crate) fn launched(package: &str) -> String { format!("Launched app {package}") }
+pub(crate) fn installed(path: &str) -> String { format!("Installed app from {path}") }
+pub(crate) fn uninstalled(package: &str) -> String { format!("Uninstalled app {package}") }
+pub(crate) fn screen_size_text(width: u64, height: u64) -> String { format!("Screen size is {width}x{height} pixels") }
+pub(crate) fn tapped(double: bool, x: i32, y: i32) -> String {
+    format!("{} at {x}, {y}", if double {"Double-tapped"} else {"Clicked"})
+}
+pub(crate) fn long_pressed(x: i32, y: i32, duration: f64) -> String { format!("Long pressed at {x}, {y} for {duration}ms") }
+pub(crate) fn pressed(button: &str) -> String { format!("Pressed the button: {button}") }
+pub(crate) fn opened(url: &str) -> String { format!("Opened URL: {url}") }
+pub(crate) fn swiped(direction: &str) -> String { format!("Swiped {direction} on screen") }
+pub(crate) fn typed(input: &str) -> String { format!("Typed text: {input}") }
+pub(crate) fn orientation_text(mode: &str) -> String { format!("Current device orientation is {mode}") }
+pub(crate) fn orientation_changed(mode: &str) -> String { format!("Changed device orientation to {mode}") }
+pub(crate) fn recording_started(output: &str) -> String { format!("Screen recording started. Output will be saved to: {output}") }
+pub(crate) fn recording_stopped(output: &str, bytes: u64, duration: u64) -> String {
+    format!("Recording stopped. File: {output} ({:.2} MB, ~{duration}s)", bytes as f64 / 1048576.)
 }
 fn package(args: &Value) -> Result<&str> {
     let p = string(args, "packageName")?;
@@ -43,7 +62,7 @@ fn extension(path: &str, allowed: &[&str]) -> Result<()> {
     Ok(())
 }
 // Only state.rs supplies these private staging paths; pin ancestors and refuse overwrite/reparse leaves.
-fn write(path: &str, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
     let path = Path::new(path);
     let _pin = Files::pin(path, true)?;
@@ -138,7 +157,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
             if output.contains("Error:") || output.contains("Exception") {
                 return Err(output);
             }
-            format!("Launched app {p}")
+            launched(p)
         }
         "mobile_terminate_app" => {
             let p = package(args)?;
@@ -165,17 +184,17 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
                 .and_then(|out| success(&out));
             let _ = transport::shell(&ctx.dev, transport::cmd(&["rm", "-f", &remote])).await;
             installed?;
-            format!("Installed app from {path}")
+            self::installed(path)
         }
         "mobile_uninstall_app" => {
             let p = package(args)?;
             let out = ctx.shell(&["pm", "uninstall", p]).await?;
             success(&out)?;
-            format!("Uninstalled app {p}")
+            uninstalled(p)
         }
         "mobile_get_screen_size" => {
             let (w, h) = screen_size(ctx).await?;
-            format!("Screen size is {w}x{h} pixels")
+            screen_size_text(w as u64, h as u64)
         }
         "mobile_click_on_screen_at_coordinates"
         | "mobile_double_tap_on_screen"
@@ -185,20 +204,13 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
                 let duration = args["duration"].as_f64().unwrap_or(500.).round();
                 ctx.action("swipe", json!([x, y, x, y, (duration / 5.).max(1.) as u64]))
                     .await?;
-                format!("Long pressed at {x}, {y} for {duration}ms")
+                long_pressed(x, y, duration)
             } else {
                 ctx.action("click", json!([x, y])).await?;
                 if name == "mobile_double_tap_on_screen" {
                     ctx.action("click", json!([x, y])).await?;
                 }
-                format!(
-                    "{} at {x}, {y}",
-                    if name == "mobile_double_tap_on_screen" {
-                        "Double-tapped"
-                    } else {
-                        "Clicked"
-                    }
-                )
+                tapped(name == "mobile_double_tap_on_screen", x, y)
             }
         }
         "mobile_list_elements_on_screen" => {
@@ -219,7 +231,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
             let code = button_code(button)
                 .ok_or_else(|| format!("UNSUPPORTED: Android button {button}"))?;
             ctx.shell(&["input", "keyevent", code]).await?;
-            format!("Pressed the button: {button}")
+            pressed(button)
         }
         "mobile_open_url" => {
             let url = string(args, "url")?;
@@ -244,7 +256,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
             if out.contains("Error:") || out.contains("Exception") {
                 return Err(out);
             }
-            format!("Opened URL: {url}")
+            opened(&url)
         }
         "mobile_swipe_on_screen" => {
             let direction = string(args, "direction")?;
@@ -284,7 +296,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
                 ]),
             )
             .await?;
-            format!("Swiped {direction} on screen")
+            swiped(direction)
         }
         "mobile_type_keys" => {
             let input = string(args, "text")?;
@@ -292,7 +304,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
             if args["submit"] == true {
                 ctx.shell(&["input", "keyevent", "66"]).await?;
             }
-            format!("Typed text: {input}")
+            typed(input)
         }
         "mobile_save_screenshot" | "mobile_take_screenshot" => {
             return screenshot(ctx, name, args).await
@@ -302,10 +314,7 @@ pub(super) async fn dispatch(ctx: &Context<'_>, name: &str, args: &Value) -> Res
             let r = info["displayRotation"]
                 .as_u64()
                 .ok_or("UNSUPPORTED: current display rotation unavailable")?;
-            format!(
-                "Current device orientation is {}",
-                if r % 2 == 0 { "portrait" } else { "landscape" }
-            )
+            orientation_text(if r % 2 == 0 { "portrait" } else { "landscape" })
         }
         "mobile_set_orientation" => {
             return super::orientation::execute(ctx, string(args, "orientation")?)
@@ -496,6 +505,12 @@ async fn screenshot(ctx: &Context<'_>, name: &str, args: &Value) -> Result<Vec<V
         .run(conn.read_until_close_bytes())
         .await?
         .map_err(|e| e.to_string())?;
+    screenshot_bytes(name, args, &bytes, || ctx.check())
+}
+pub(crate) fn screenshot_bytes(name: &str, args: &Value, bytes: &[u8], check: impl Fn() -> Result<()>) -> Result<Vec<Value>> {
+    let take = name == "mobile_take_screenshot";
+    let save = args["saveTo"].as_str();
+    if !take {extension(save.ok_or("saveTo required")?, &["png", "jpg", "jpeg"])?;}
     let mut image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
         .map_err(|e| e.to_string())?;
     let original = image.dimensions();
@@ -517,7 +532,7 @@ async fn screenshot(ctx: &Context<'_>, name: &str, args: &Value) -> Result<Vec<V
     if (width, height) != original {
         image = image.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
     }
-    ctx.check()?;
+    check()?;
     let png = !take && save.unwrap().to_ascii_lowercase().ends_with(".png");
     let mut out = std::io::Cursor::new(Vec::new());
     if png {
@@ -529,7 +544,7 @@ async fn screenshot(ctx: &Context<'_>, name: &str, args: &Value) -> Result<Vec<V
             .encode_image(&image.to_rgb8())
             .map_err(|e| e.to_string())?;
     }
-    ctx.check()?;
+    check()?;
     if let Some(path) = save {
         write(path, &out.into_inner())?;
         return Ok(text(format!("Screenshot saved to: {path}")));
@@ -618,9 +633,7 @@ async fn record_start(ctx: &Context<'_>, args: &Value) -> Result<String> {
         started: Instant::now(),
     });
     ctx.check()?;
-    Ok(format!(
-        "Screen recording started. Output will be saved to: {output}"
-    ))
+    Ok(recording_started(output))
 }
 async fn record_stop(ctx: &Context<'_>) -> Result<String> {
     let mut slot = ctx.phone.recording.lock().await;
@@ -653,10 +666,7 @@ async fn record_stop(ctx: &Context<'_>) -> Result<String> {
     write(&output, &bytes)?;
     let duration = recording.started.elapsed().as_secs();
     let _ = transport::shell(&ctx.dev, transport::cmd(&["rm", "-f", &recording.remote])).await;
-    let answer = format!(
-        "Recording stopped. File: {output} ({:.2} MB, ~{duration}s)",
-        bytes.len() as f64 / 1048576.
-    );
+    let answer = recording_stopped(&output, bytes.len() as u64, duration);
     slot.take();
     Ok(answer)
 }

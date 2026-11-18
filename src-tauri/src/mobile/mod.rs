@@ -1,8 +1,8 @@
 //! App-owned Android automation. No ambient ADB, Node, MCP listener or action retry.
-mod hierarchy;
+pub(crate) mod hierarchy;
 mod location;
 mod orientation;
-mod tools;
+pub(crate) mod tools;
 pub(crate) mod transport;
 use crate::model::Result;
 use adbutils::AdbDevice;

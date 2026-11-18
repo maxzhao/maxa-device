@@ -2,7 +2,7 @@
 
 Maxa 的设备端应用：把可信宿主上的文件与命令执行、Windows 桌面自动化、Android 控制统一到一个 Tauri 应用中。
 
-目前发布 **Windows x64** 安装包；手机目标仅支持 Android。Linux/macOS 宿主、iOS 和云设备不在当前支持范围。
+桌面端提供 **Windows x64** 安装包；另支持 Android arm64 设备通过用户安装的 Termux、无界面 Agent 和伴随 APK 直接作为宿主，无需 Termux:API 插件。手机目标仅支持 Android。Linux/macOS 宿主、iOS 和云设备不在当前支持范围。
 
 ## 下载与使用
 
@@ -46,6 +46,8 @@ Maxa 的 `copy` builtin 可在本机和已配对设备之间复制二进制文�
 
 正式 Windows 安装包使用 Windows 原生构建。需要 Node.js 22.12+、Rust/MSVC 工具链、Visual Studio C++ Build Tools、Windows SDK，以及打包时可用的网络。Tauri 管理 NSIS 打包工具。
 
+先在 Linux x86_64（可用 WSL）执行 `bash android/agent/build.sh`、`bash android/build-companion.sh`，生成同版本 Agent、伴随 APK、对应源码包和校验清单。将 `android/dist/companion/` 原样放入同一源码版本的 Windows 构建目录。
+
 在 Windows PowerShell 中，进入本仓库根目录：
 
 ```powershell
@@ -72,4 +74,4 @@ WSL/Linux 可运行 `npm run build` 和 `npm run check:backend`。Windows 交叉
 
 本仓库独立维护 App 源码、依赖锁、组件清单、构建和用户文档。行为规格及 proposal/delta 仍由 Maxa 主项目的 `.maxa/specs/` 维护，不复制到本仓库；Maxa 的连接器、builtin 和 Ability 也仍由主项目维护。
 
-项目自身代码采用 [Apache-2.0](./LICENSE)。第三方组件保留各自许可证，参见 [第三方分发说明](./THIRD-PARTY.md)、`licenses/` 和 release 中的依赖源码包。
+仓库根许可为 [Apache-2.0](./LICENSE)；含 Termux:API 派生代码的组合伴随 APK 按 GPLv3 分发。其[对应源码说明](./android/companion/licenses/SOURCE.md)和[内置 API 清单](./android/companion/EMBEDDED-API.md)随源码提供。第三方组件保留各自许可证，参见 [第三方分发说明](./THIRD-PARTY.md)、`licenses/` 和 release 中的依赖源码包。

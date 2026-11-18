@@ -16,6 +16,10 @@ Maxa Device's own code is licensed under Apache-2.0. Dependencies retain their o
 
 The Mobile pack deliberately excludes `fastboot`, `mke2fs`, F2FS tools, SQLite tools, and `libwinpthread`. They are not required by the App and are not redistributed. Google's complete aggregate `NOTICE.txt` is retained unmodified; notices for omitted tools are not a claim that those tools ship in this product. The included ADB binaries import only the two bundled ADB libraries and Windows system libraries.
 
+## Android distribution
+The same-version headless Android arm64 Agent is independently licensed under Apache-2.0. The combined companion APK incorporating Termux:API source from `fc26ce17e3badf85d4df191af364fcf7798047f1` is distributed under GPLv3. The APK includes upstream attribution, GPLv3, changes and the exact corresponding source archive checksum under `assets/licenses/` and `assets/embedded-api-source.json`. Windows bundles the same APK, source archive and checksums as the standalone build. Release `SHA256SUMS` must include the Agent tarball, install script, standalone APK, companion source archive and Windows installer. Follow `android/companion/licenses/SOURCE.md` for matching build inputs and dependency sources before distributing either APK copy. Do not redistribute signing keys.
+
+Termux is user-installed; the Termux:API plugin is not required or bundled. All software running under the Termux UID is trusted with the Agent identity, pairing credentials and enabled companion capabilities.
 ## Release obligations
 
 Before building an installer, run `npm run prepare:licenses`. It reads the locked Windows dependency graph, retains dependency license texts, and creates the matching dependency-source archive, including the MPL-2.0 packages. Generated notices are bundled with the installer. Publish `third-party-sources.tar.gz` with that same release; do not substitute sources from another lockfile or version.

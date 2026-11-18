@@ -23,7 +23,9 @@ fn catalog(module: &str) -> Result<Value> {
         "mobile" => include_str!("catalogs/mobile-tools.json"),
         _ => return Err("invalid native module".into()),
     };
-    serde_json::from_str(source).map_err(|e| format!("invalid embedded catalog: {e}"))
+    let value: Value = serde_json::from_str(source).map_err(|e| format!("invalid embedded catalog: {e}"))?;
+    if cfg!(target_os = "android") && module == "mobile" { return Ok(android_subset(&value)); }
+    Ok(value)
 }
 #[cfg(test)]
 mod tests {
@@ -50,5 +52,23 @@ mod tests {
             .unwrap();
         assert_eq!(response["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(response["id"], 7);
+    }
+}
+
+pub fn android_tool(name: &str) -> bool {
+    matches!(name, "mobile_list_available_devices" | "mobile_list_apps" | "mobile_get_foreground_app" | "mobile_launch_app" | "mobile_open_url" | "mobile_get_screen_size" | "mobile_get_orientation" | "mobile_set_orientation" | "mobile_list_elements_on_screen" | "mobile_click_on_screen_at_coordinates" | "mobile_double_tap_on_screen" | "mobile_long_press_on_screen_at_coordinates" | "mobile_swipe_on_screen" | "mobile_press_button" | "mobile_type_keys" | "mobile_take_screenshot" | "mobile_save_screenshot" | "mobile_clipboard" | "mobile_install_app" | "mobile_uninstall_app" | "mobile_start_screen_recording" | "mobile_stop_screen_recording" | "mobile_batch_commands")
+}
+fn android_subset(full: &Value) -> Value {
+    Value::Array(full.as_array().unwrap().iter().filter(|t| android_tool(t["name"].as_str().unwrap_or(""))).cloned().collect())
+}
+#[cfg(test)]
+#[test]
+fn android_subset_has_23_byte_identical_definitions() {
+    let full: Value = serde_json::from_str(include_str!("catalogs/mobile-tools.json")).unwrap();
+    let subset=android_subset(&full);
+    assert_eq!(subset.as_array().unwrap().len(),23);
+    for tool in subset.as_array().unwrap() {
+        let source=full.as_array().unwrap().iter().find(|t|t["name"]==tool["name"]).unwrap();
+        assert_eq!(serde_json::to_vec(tool).unwrap(),serde_json::to_vec(source).unwrap());
     }
 }

@@ -25,8 +25,9 @@ fn auth(app: &AppState, headers: &HeaderMap) -> Result<ClientInfo> {
     app.store.authenticate(token)
 }
 async fn public(State(app): State<Arc<AppState>>) -> Json<Value> {
+    let identity = app.public_identity();
     Json(
-        json!({"protocolVersion":2,"hostId":app.identity.public.host_id,"displayName":app.identity.public.display_name,"publicKeyPin":app.identity.public.public_key_pin}),
+        json!({"protocolVersion":2,"hostId":identity.host_id,"displayName":identity.display_name,"publicKeyPin":identity.public_key_pin}),
     )
 }
 async fn pair(State(app): State<Arc<AppState>>, Json(args): Json<Value>) -> Response {
@@ -253,7 +254,7 @@ pub async fn serve(
     let listener = std::net::TcpListener::bind(address).map_err(|e| e.to_string())?;
     let bound = listener.local_addr().map_err(|e| e.to_string())?;
     let discovery_error =
-        match crate::discovery::Advertisement::publish(&app.identity.public, bound.port()) {
+        match crate::discovery::Advertisement::publish(&app.public_identity(), bound.port()) {
             Ok(ad) => {
                 *app.advertisement.lock().await = Some(ad);
                 None

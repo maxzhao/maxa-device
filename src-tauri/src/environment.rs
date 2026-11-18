@@ -59,6 +59,13 @@ pub fn context() -> Value {
             }
         }
     }
+    #[cfg(unix)]
+    {
+        if let Ok(home) = std::env::var("HOME") { value["home"] = json!(home); }
+        value["user"] = json!(std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", unsafe {libc::getuid()})));
+    }
+    #[cfg(target_os = "android")]
+    { value["os"] = json!(format!("Android {}", crate::android::property("ro.build.version.release").unwrap_or_else(|| "unknown".into()))); }
     value["wslHostProbeVersion"] = json!(if cfg!(windows) { 1 } else { 0 });
     value
 }
@@ -215,4 +222,39 @@ mod tests {
         assert!(challenge_digest(&path).is_err());
         std::fs::remove_file(path).unwrap();
     }
+}
+
+/// Only publish a bundled file matching this binary's build-time companion manifest.
+pub fn companion_apk(resources: &Path) -> Option<Value> {
+    let manifest: Value=serde_json::from_str(option_env!("MAXA_COMPANION_MANIFEST")?).ok()?;
+    verified_companion(resources,&manifest)
+}
+fn verified_companion(resources: &Path, manifest: &Value) -> Option<Value> {
+    use sha2::{Digest,Sha256};
+    use std::io::Read;
+    let name=manifest["file"].as_str()?;
+    let version=manifest["version"].as_str()?;
+    let hash=manifest["sha256"].as_str()?;
+    if version!=env!("CARGO_PKG_VERSION") || name!=format!("maxa-device-companion-{version}.apk") || hash.len()!=64 {return None;}
+    let path=resources.join("android").join(name);
+    if !path.is_absolute() {return None;}
+    let meta=std::fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() || meta.file_type().is_symlink() {return None;}
+    let mut f=std::fs::File::open(&path).ok()?;let mut h=Sha256::new();let mut buf=[0;65536];
+    loop {let n=f.read(&mut buf).ok()?;if n==0 {break;}h.update(&buf[..n]);}
+    if format!("{:x}",h.finalize())!=hash {return None;}
+    Some(json!({"path":path,"version":version,"sha256":hash}))
+}
+#[cfg(test)]
+#[test]
+fn companion_apk_reporting_requires_matching_bundled_bytes() {
+    let root=std::env::temp_dir().join(crate::model::id());
+    std::fs::create_dir_all(root.join("android")).unwrap();
+    let version=env!("CARGO_PKG_VERSION");let file=format!("maxa-device-companion-{version}.apk");
+    let manifest=json!({"file":file,"version":version,"sha256":crate::model::digest(b"test apk")});
+    assert!(verified_companion(&root,&manifest).is_none());
+    std::fs::write(root.join("android").join(&file),b"test apk").unwrap();
+    let report=verified_companion(&root,&manifest).unwrap();assert_eq!(report["version"],version);assert_eq!(report["sha256"],manifest["sha256"]);assert!(Path::new(report["path"].as_str().unwrap()).is_absolute());
+    std::fs::write(root.join("android").join(&file),b"tampered").unwrap();assert!(verified_companion(&root,&manifest).is_none());
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -1,0 +1,24 @@
+Maxa Device Companion APK — GNU General Public License, version 3
+
+The combined companion APK is distributed under GPLv3. Individual source and
+independently licensed components retain their original license and notices.
+See termux-api/GPL-3.0.txt, termux-api/README.upstream.md and termux-api/ORIGIN.json.
+
+Termux:API contributors (https://github.com/termux/termux-api), upstream commit
+fc26ce17e3badf85d4df191af364fcf7798047f1. Adapted by Maxa, 2026-11-18:
+separate Android UID; replace receiver/socket/FD transport with an authenticated,
+strict JSON dispatcher; bound and restrict effects and parameters. Do not use
+upstream plugin commands, shell callbacks, broadcast components or keys. See
+ORIGIN.json for per-file attribution. No Termux:API client scripts are bundled.
+
+Maxa Device project sources, when distributed separately, retain Apache-2.0;
+see project/LICENSE. Included Kotlin runtime and JetBrains annotations are
+Apache-2.0; see the pinned dependencies in the corresponding source archive.
+Bundled independent headless Agent and dependencies: see project/THIRD-PARTY.md
+and the original license texts and source instructions in that archive.
+
+Source access: obtain maxa-device-companion-<version>-source.tar.gz and the
+matching SHA256SUMS from the same distributor and release as the APK, including
+when acquired as part of the Windows installer. The archive contains APK and
+Agent project source, build scripts, lockfiles, notices and dependency source
+instructions. Do not redistribute the binary without corresponding source.

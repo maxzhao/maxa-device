@@ -34,6 +34,8 @@ impl Output {
     }
 }
 fn clean_absolute(path: &Path) -> Result<()> {
+    #[cfg(target_os="android")]
+    crate::android::path_arg(path.to_str().ok_or("INVALID_ARGUMENT: UTF-8 Android path required")?)?;
     if !path.is_absolute()
         || path
             .components()
@@ -77,18 +79,28 @@ fn guarded(path: &Path, write: bool) -> Result<Guarded> {
                     return Err("REPARSE_POINT_DENIED".into());
                 }
                 if meta.is_dir() {
-                    let mut opts = OpenOptions::new();
-                    opts.read(true);
-                    #[cfg(windows)]
+                    // Linux/Android ancestors may be searchable but not readable (/data).
+                    // Other Unix hosts do not need Windows' rename-prevention handles.
+                    #[cfg(any(windows, target_os = "linux", target_os = "android"))]
                     {
-                        use std::os::windows::fs::OpenOptionsExt;
-                        opts.custom_flags(0x02000000 | 0x00200000).share_mode(1 | 2);
+                        let mut opts = OpenOptions::new();
+                        opts.read(true);
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::fs::OpenOptionsExt;
+                            opts.custom_flags(0x02000000 | 0x00200000).share_mode(1 | 2);
+                        }
+                        #[cfg(any(target_os = "linux", target_os = "android"))]
+                        {
+                            use std::os::unix::fs::OpenOptionsExt;
+                            opts.custom_flags(libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
+                        }
+                        let handle = opts.open(&current).map_err(|e| e.to_string())?;
+                        if is_link(&handle.metadata().map_err(|e| e.to_string())?) {
+                            return Err("REPARSE_POINT_DENIED".into());
+                        }
+                        handles.push(handle);
                     }
-                    let handle = opts.open(&current).map_err(|e| e.to_string())?;
-                    if is_link(&handle.metadata().map_err(|e| e.to_string())?) {
-                        return Err("REPARSE_POINT_DENIED".into());
-                    }
-                    handles.push(handle);
                 } else if meta.is_file() && !write {
                     let mut opts = OpenOptions::new();
                     opts.read(true);
@@ -294,7 +306,8 @@ impl Files {
                 fs::create_dir(&dir).map_err(|e| e.to_string())?;
             }
         }
-        let _parent_pin = self.guard(parent, true)?;
+        // The file is the mutation target; its parent is only pinned, not replaced.
+        let _parent_pin = self.guard(parent, false)?;
         let tmp = parent.join(format!(".maxa-{}.tmp", id()));
         private_write(&tmp, text(args, "content")?.as_bytes())?;
         let result = (|| {
@@ -368,7 +381,9 @@ impl Files {
         if !parent.is_dir() {
             return Err("output parent must already exist".into());
         }
-        let parent = self.guard(parent, true)?;
+        // As in write(), protect the final file and only pin/check its parent.
+        // An ancestor of a protected root may contain unrelated output files.
+        let parent = self.guard(parent, false)?;
         let before = version(&destination.path)?;
         Ok(Output {
             destination,
@@ -499,6 +514,77 @@ mod tests {
         );
         assert_eq!(f.exclusions(&dir), vec!["private/**"]);
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn searchable_unreadable_ancestor_allows_file_access_but_not_symlinks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(self.0.join("walk"), fs::Permissions::from_mode(0o700));
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let fixture = Fixture(std::env::temp_dir().join(id()));
+        let parent = fixture.0.join("walk");
+        let scope = parent.join("workspace");
+        fs::create_dir_all(&scope).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o311)).unwrap();
+        if unsafe { libc::geteuid() } != 0 {
+            assert_eq!(fs::read_dir(&parent).unwrap_err().kind(), std::io::ErrorKind::PermissionDenied);
+        }
+        let files = Files::new(vec![parent.join("private")]);
+        let target = scope.join("hello.txt");
+        files.write(&json!({"path":target,"content":"hello"})).unwrap();
+        assert_eq!(files.read(&json!({"path":target})).unwrap()["content"], "hello");
+        files.write(&json!({"path":target,"content":"updated"})).unwrap();
+        assert_eq!(files.read(&json!({"path":target})).unwrap()["content"], "updated");
+        files.write(&json!({"path":scope.join("nested/new.txt"),"content":"new"})).unwrap();
+        assert_eq!(resolved(&target).unwrap(), target);
+        assert_eq!(files.search_root(&scope).unwrap().path, scope);
+        assert_eq!(files.search_root(&target).unwrap().path, target);
+        files.stage_input(&target, &fixture.0.join("staged.txt")).unwrap();
+        assert_eq!(fs::read(fixture.0.join("staged.txt")).unwrap(), b"updated");
+        symlink(&target, scope.join("leaf-link")).unwrap();
+        symlink(&scope, fixture.0.join("parent-link")).unwrap();
+        for path in [scope.join("leaf-link"), fixture.0.join("parent-link/hello.txt")] {
+            assert!(files.read(&json!({"path":path})).unwrap_err().contains("REPARSE_POINT_DENIED"));
+            assert!(files.write(&json!({"path":path,"content":"blocked"})).unwrap_err().contains("REPARSE_POINT_DENIED"));
+            assert!(files.search_root(&path).is_err());
+        }
+    }
+    #[test]
+    fn output_file_under_protected_data_ancestor_uses_file_level_guard() {
+        let root = std::env::temp_dir().join(id());
+        let home = root.join("home");
+        let data = home.join(".local/share/maxa-device");
+        let staging = data.join("staging");
+        let resources = root.join("prefix/opt/maxa-device/0.1.1");
+        fs::create_dir_all(&staging).unwrap();
+        fs::create_dir_all(&resources).unwrap();
+        let files = Files::new(vec![data.clone(), resources.clone()]);
+        // Both Mobile output arguments share stage_output; their parent contains
+        // the protected data root, but the final files do not overlap it.
+        for name in ["maxa-shot.png", "maxa-recording.mp4"] {
+            let target = home.join(name);
+            let stage = staging.join(name);
+            let output = files.stage_output(&target, stage.clone()).unwrap();
+            fs::write(&stage, b"output bytes").unwrap();
+            assert_eq!(files.commit_output(&output).unwrap(), b"output bytes");
+            assert_eq!(fs::read(&target).unwrap(), b"output bytes");
+        }
+        let system_file = home.join("system.txt");
+        files.write(&json!({"path":system_file,"content":"new"})).unwrap();
+        files.write(&json!({"path":system_file,"content":"overwrite"})).unwrap();
+        assert_eq!(fs::read(&system_file).unwrap(), b"overwrite");
+        for protected in [&data, &data.join("blocked.png"), &resources] {
+            assert_eq!(files.stage_output(protected, staging.join("blocked")).err().unwrap(), "INTERNAL_PATH_PROTECTED");
+            assert_eq!(files.write(&json!({"path":protected,"content":"blocked"})).unwrap_err(), "INTERNAL_PATH_PROTECTED");
+        }
+        // Pinning an ancestor is allowed; deleting/replacing it is still refused.
+        assert_eq!(files.delete(&json!({"paths":[home]})).unwrap_err(), "INTERNAL_PATH_PROTECTED");
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn staged_input_and_guarded_output() {

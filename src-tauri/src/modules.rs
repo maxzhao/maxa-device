@@ -95,6 +95,7 @@ pub struct Modules {
     running: Mutex<HashMap<String, Running>>,
     transition: Mutex<()>,
     mobile: crate::mobile::Mobile,
+    pub companion: crate::android::Mobile,
     windows_events: tokio::sync::broadcast::Sender<Value>,
     pub adb_port: u16,
     pub chinese: std::sync::atomic::AtomicBool,
@@ -120,7 +121,7 @@ fn free_port() -> Result<u16> {
 impl Modules {
     pub fn new(root: PathBuf, resources: PathBuf) -> Result<Arc<Self>> {
         let states = ["system", "windows", "mobile"]
-            .into_iter()
+            .into_iter().filter(|id| !cfg!(target_os = "android") || *id != "windows")
             .map(|id| {
                 (
                     id.into(),
@@ -135,6 +136,7 @@ impl Modules {
             })
             .collect();
         Ok(Arc::new(Self {
+            companion: crate::android::Mobile::new(root.clone()),
             root,
             resources,
             states: Mutex::new(states),
@@ -172,6 +174,8 @@ impl Modules {
         x
     }
     pub async fn ready(&self, id: &str) -> Result<()> {
+        #[cfg(target_os="android")]
+        if id=="system" {crate::android::dependencies()?;}
         match self.states.lock().await.get(id) {
             Some(s) if s.phase == "ready" => Ok(()),
             _ => Err(format!("MODULE_UNAVAILABLE: {id}")),
@@ -350,7 +354,7 @@ impl Modules {
         Ok(())
     }
     pub async fn set(&self, id: &str, enabled: bool) -> Result<()> {
-        if !valid_module(id) {
+        if !valid_module(id) || cfg!(target_os="android") && id=="windows" {
             return Err("unknown module".into());
         }
         let _transition = self.transition.lock().await;
@@ -434,6 +438,22 @@ impl Modules {
                 .map_err(|e| format!("retired Windows component cleanup: {e}")),
         }
     }
+    #[cfg(target_os="android")]
+    async fn start(&self, id: &str) -> Result<()> {
+        {
+            return match id {
+                "system" => {
+                    crate::android::shell()?;
+                    let out = command("rg").arg("--version").output().await.map_err(|_|"ripgrep missing from Termux PATH; pkg install ripgrep")?;
+                    if !out.status.success() {return Err("ripgrep not ready; pkg install ripgrep".into());}
+                    Ok(())
+                },
+                "mobile" => self.companion.status().await.map(|_|()),
+                _ => Err("UNSUPPORTED: Android modules are system and mobile".into()),
+            };
+        }
+    }
+    #[cfg(not(target_os="android"))]
     async fn start(&self, id: &str) -> Result<()> {
         self.remove_retired_windows()?;
         if id != "windows" {
@@ -532,6 +552,7 @@ impl Modules {
     fn adb_client(&self) -> adbutils::AdbClient {
         crate::mobile::transport::client(self.adb_port)
     }
+    #[cfg(not(target_os="android"))]
     pub async fn stop_phone(&self, physical: Option<&str>) -> Result<()> {
         let result = self.mobile.stop(physical).await;
         let pending = self.mobile.termination_error().await;
@@ -546,6 +567,7 @@ impl Modules {
         }
         result
     }
+    #[cfg(not(target_os="android"))]
     pub async fn dispatch_phone(
         &self,
         physical: &str,
@@ -636,8 +658,10 @@ impl Modules {
         }
         Ok(())
     }
+    #[cfg(not(target_os="android"))]
     pub async fn phone_preflight(&self, physical: &str, transport: &str) -> Result<()> {
         self.ready("mobile").await?;
+
         let dev = self.adb_client().device(transport);
         let state = tokio::time::timeout(std::time::Duration::from_secs(8), dev.get_state())
             .await
@@ -664,6 +688,7 @@ impl Modules {
         }
         Ok(())
     }
+    #[cfg(not(target_os="android"))]
     pub async fn mobile_handover_check(&self, physical: &str, transport: &str) -> Result<()> {
         self.mobile
             .handover(self.adb_port, physical, transport)
@@ -683,11 +708,13 @@ impl Modules {
             &conn.read_string_block().await.map_err(|e| e.to_string())?,
         ))
     }
+    #[cfg(not(target_os="android"))]
     pub async fn phones(
         &self,
         removed: &std::collections::HashSet<String>,
     ) -> Result<Vec<PhoneInfo>> {
         self.ready("mobile").await?;
+
         let routes_path = self.root.join("phone-routes.json");
         let mut routes: HashMap<String, PhoneRoute> = match fs::read(&routes_path) {
             Ok(bytes) => {
@@ -785,7 +812,35 @@ impl Modules {
         )?;
         Ok(by_id.into_values().collect())
     }
+    #[cfg(target_os="android")]
+    pub async fn stop_phone(&self, _physical: Option<&str>) -> Result<()> {self.companion.stop().await}
+    #[cfg(target_os="android")]
+    pub async fn dispatch_phone(&self, physical:&str, message:&Value, timeout:f64, cancelled:&std::sync::atomic::AtomicBool)->Result<Value> {
+        if physical!="local" {return Err("INVALID_ARGUMENT: Android host device must be local".into());}
+        self.ready("mobile").await?;self.companion.call(message,timeout,cancelled).await
+    }
+    #[cfg(target_os="android")]
+    pub async fn phone_preflight(&self, physical:&str, transport:&str)->Result<()> {
+        if physical!="local" || transport!="local" {return Err("INVALID_ARGUMENT: Android host device must be local".into());}
+        self.ready("mobile").await?;self.companion.status().await.map(|_|())
+    }
+    #[cfg(target_os="android")]
+    pub async fn mobile_handover_check(&self, physical:&str, transport:&str)->Result<()> {
+        if physical=="local" && transport=="local" {Ok(())} else {Err("INVALID_ARGUMENT: Android host device must be local".into())}
+    }
+    #[cfg(target_os="android")]
+    pub async fn phones(&self,_removed:&std::collections::HashSet<String>)->Result<Vec<PhoneInfo>> {
+        self.ready("mobile").await?;
+        let status=self.companion.status().await;let ready=status.is_ok();
+        Ok(vec![PhoneInfo{id:"local".into(),name:crate::android::property("ro.product.model").unwrap_or("Android".into()),removed:false,transports:vec!["local".into()],active_transport:Some("local".into()),state:if ready {"device"} else {"unavailable"}.into(),reason:status.err()}])
+    }
     pub async fn health(&self) {
+        #[cfg(target_os="android")]
+        if self.ready("mobile").await.is_ok() {
+            if let Err(e)=self.companion.status().await {
+                if let Some(state)=self.states.lock().await.get_mut("mobile") {state.phase="failed".into();state.error=Some(e);}
+            }
+        }
         let broken = {
             let mut running = self.running.lock().await;
             running

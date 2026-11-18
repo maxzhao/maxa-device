@@ -16,6 +16,11 @@ pub struct AppState {
     settings_change: Mutex<()>,
     shutting_down: AtomicBool,
     pub identity: HostIdentity,
+    display_name: std::sync::RwLock<String>,
+    #[cfg(any(target_os = "android", test))]
+    companion_name: std::sync::RwLock<Option<String>>,
+    #[cfg(any(target_os = "android", test))]
+    name_change: Mutex<()>,
     pub store: Arc<Store>,
     pub modules: Arc<Modules>,
     pub jobs: Arc<Jobs>,
@@ -131,6 +136,10 @@ impl AppState {
                 .map_err(|e| e.to_string())?;
         }
         let identity = HostIdentity::load(&data)?;
+        #[cfg(target_os = "android")]
+        let display_name = crate::identity::android_display_name(&data, None)?;
+        #[cfg(not(target_os = "android"))]
+        let display_name = identity.public.display_name.clone();
         let store = Arc::new(Store::open(&data.join("state.sqlite"))?);
         let preferences = store.preferences()?;
         let files = Files::new(vec![data.clone(), resources.clone()]);
@@ -152,6 +161,11 @@ impl AppState {
             settings_change: Mutex::new(()),
             shutting_down: AtomicBool::new(false),
             identity,
+            display_name: std::sync::RwLock::new(display_name),
+            #[cfg(any(target_os = "android", test))]
+            companion_name: std::sync::RwLock::new(None),
+            #[cfg(any(target_os = "android", test))]
+            name_change: Mutex::new(()),
             store,
             modules,
             jobs,
@@ -181,6 +195,37 @@ impl AppState {
             }),
             worker_owners: Mutex::new(HashMap::new()),
         }))
+    }
+    pub fn public_identity(&self) -> Identity {
+        let mut identity = self.identity.public.clone();
+        identity.display_name = self.display_name.read().unwrap().clone();
+        identity
+    }
+    #[cfg(any(target_os = "android", test))]
+    async fn apply_android_display_name(&self) -> Result<()> {
+        let companion = self.companion_name.read().unwrap().clone();
+        let name = crate::identity::android_display_name(&self.data, companion.as_deref())?;
+        *self.display_name.write().unwrap() = name;
+        if let Some(advertisement) = self.advertisement.lock().await.as_mut() {
+            advertisement.update_identity(&self.public_identity())?;
+        }
+        Ok(())
+    }
+    #[cfg(any(target_os = "android", test))]
+    pub async fn refresh_android_display_name(&self) -> Result<()> {
+        let status = self.modules.companion.status().await;
+        let _change = self.name_change.lock().await;
+        if let Ok(status) = status {
+            *self.companion_name.write().unwrap() = status["deviceName"].as_str().map(str::to_owned);
+        }
+        self.apply_android_display_name().await
+    }
+    #[cfg(any(target_os = "android", test))]
+    pub async fn rename(&self, name: Option<&str>) -> Result<Identity> {
+        let _change = self.name_change.lock().await;
+        crate::identity::save_display_name(&self.data, name)?;
+        self.apply_android_display_name().await?;
+        Ok(self.public_identity())
     }
     pub async fn windows_worker_event(&self, event: &Value) {
         if !self.modules.windows_event_current(event).await {
@@ -216,7 +261,7 @@ impl AppState {
     pub async fn snapshot(&self) -> DeviceSnapshot {
         DeviceSnapshot {
             protocol_version: 2,
-            identity: self.identity.public.clone(),
+            identity: self.public_identity(),
             service: self.service.lock().await.clone(),
             modules: self.module_statuses().await,
             clients: self.store.clients(),
@@ -249,6 +294,11 @@ impl AppState {
     }
     pub async fn phone_status(&self) -> Vec<PhoneInfo> {
         let mut phones = self.phones.lock().await.clone();
+        // Android's sole local phone is the host itself, including human rename overrides.
+        #[cfg(target_os = "android")]
+        for phone in &mut phones {
+            phone.name = self.public_identity().display_name;
+        }
         let removed = self.removed_phones.lock().await;
         for phone in &mut phones {
             phone.removed = removed.contains_key(&phone.id);
@@ -581,6 +631,8 @@ impl AppState {
         }
     }
     pub async fn set_module(&self, module: &str, enabled: bool) -> Result<()> {
+        #[cfg(target_os="android")]
+        if module=="windows" {return Err("UNSUPPORTED: Android modules are system and mobile".into());}
         let _change = self.settings_change.lock().await;
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err("App is shutting down".into());
@@ -627,6 +679,19 @@ impl AppState {
             self.jobs.set_enabled(true).await;
         }
         result
+    }
+    pub(crate) async fn android_api(&self, name: &str, args: Value) -> Result<Value> {
+        // Local API effects participate in the existing update/shutdown barrier.
+        let _guard = self.mutation.lock().await;
+        if self.shutting_down.load(Ordering::SeqCst) {return Err("HOST_SHUTTING_DOWN".into());}
+        self.modules.companion.api(name, args).await
+    }
+    pub async fn prepare_update_shutdown(&self) -> Result<()> {
+        let _guard=self.mutation.try_lock().map_err(|_|"BUSY: invocation in progress")?;
+        if self.store.jobs().iter().any(|j|matches!(j.state.as_str(),"queued"|"running"|"cancel_requested")) || !self.activities.lock().await.is_empty() || self.modules.companion.recording_active().await {return Err("BUSY: stop operations before shutdown/update".into());}
+        self.transfers.quiesce_for_update()?;
+        self.shutting_down.store(true,Ordering::SeqCst);
+        Ok(())
     }
     pub async fn shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
@@ -711,6 +776,7 @@ impl AppState {
     }
     pub async fn invoke(self: &Arc<Self>, client: &ClientInfo, call: &Invocation) -> Result<Value> {
         self.store.active(&client.id)?;
+        if self.shutting_down.load(Ordering::SeqCst) {return Err("HOST_SHUTTING_DOWN".into());}
         if call.request_id.len() < 8 || call.chat_id.is_empty() {
             return Err("requestId/chatId required".into());
         }
@@ -718,6 +784,11 @@ impl AppState {
             let phones = self.phone_status().await.into_iter().collect::<Vec<_>>();
             let mut status = json!({"hostId":self.identity.public.host_id,"service":self.service.lock().await.clone(),"modules":self.module_statuses().await,"phones":phones,"trusted":true,"copyVersion":1,"copyInternalSymlinks":self.copy_symlinks_status().await.0,"maxFileBytes":crate::transfer::MAX_FILE_BYTES});
             status.as_object_mut().unwrap().extend(crate::environment::context().as_object().unwrap().clone());
+            #[cfg(windows)]
+            if let Some(apk)=crate::environment::companion_apk(&self.modules.resources) {status["companionApk"]=apk;}
+            #[cfg(target_os="android")]
+            { status["credentialBoundary"]=json!(crate::android::TRUST_NOTICE);
+              status["companion"]=match self.modules.companion.status().await {Ok(v)=>v,Err(e)=>json!({"ready":false,"missing":e})}; }
             return Ok(status);
         }
         if call.operation == "copy.status" || call.operation == "copy.cancel" {
@@ -761,6 +832,7 @@ impl AppState {
         let queued_epoch = self.queued_control(&client.id, call).await;
         // All mutations, permission checks and request registration have one owner.
         let _guard = self.mutation.lock().await;
+        if self.shutting_down.load(Ordering::SeqCst) {return Err("HOST_SHUTTING_DOWN".into());}
         if self
             .store
             .clients()
@@ -877,6 +949,9 @@ impl AppState {
             path.as_path()
         };
         let args = a["argv"].as_array().ok_or("rg argv required")?;
+        #[cfg(target_os="android")]
+        let mut cmd = crate::modules::command("rg");
+        #[cfg(not(target_os="android"))]
         let mut cmd = crate::modules::command(self.modules.module_root("system").join("rg.exe"));
         cmd.env_remove("RIPGREP_CONFIG_PATH").current_dir(directory);
         // Search is not an arbitrary argv/shell endpoint. Only query options are admitted.
@@ -1114,6 +1189,8 @@ impl AppState {
                 .find(|t| t["name"] == name)
                 .ok_or("tool is not in the admitted live catalog")?;
             crate::schema::validate(&tool["inputSchema"], args)?;
+            #[cfg(target_os="android")]
+            if module=="mobile" {crate::android::validate_tool(name,args)?;}
             if name != "mobile_batch_commands" && name != "mobile_stop_screen_recording" {
                 staged = Some(Arc::new(self.stage_mcp(
                     client,
@@ -1190,6 +1267,8 @@ impl AppState {
                             .find(|t| t["name"] == step_name)
                             .ok_or("step not in admitted catalog")?;
                         crate::schema::validate(&definition["inputSchema"], &step_args)?;
+                        #[cfg(target_os="android")]
+                        crate::android::validate_tool(step_name,&step_args)?;
                         for key in ["saveTo", "output"] {
                             if let Some(path) = step_args[key].as_str() {
                                 self.files.check(std::path::Path::new(path), true)?;
@@ -1496,6 +1575,31 @@ mod tests {
         app.modules.ready_for_control_test("windows").await;
         app.modules.ready_for_control_test("mobile").await;
         (root, app, client)
+    }
+    #[tokio::test]
+    async fn android_rename_updates_public_identity_without_rotating_trust() {
+        let (root, app, client) = fixture().await;
+        let before = app.public_identity();
+        let persisted = std::fs::read(root.join("identity.dpapi")).unwrap();
+        let request = app.pair_request(&json!({"protocolVersion":2,"hostId":before.host_id,"publicKeyPin":before.public_key_pin,"clientName":"test","clientIdentity":"a".repeat(64),"clientNonce":"b".repeat(64)})).await.unwrap();
+        *app.companion_name.write().unwrap() = Some("Companion tablet".into());
+        let renamed = app.rename(Some("我的平板")).await.unwrap();
+        assert_eq!(renamed.display_name, "我的平板");
+        assert_eq!(renamed.host_id, before.host_id);
+        assert_eq!(renamed.public_key_pin, before.public_key_pin);
+        assert_eq!(app.snapshot().await.identity.display_name, "我的平板");
+        assert_eq!(crate::identity::android_display_name(&root,Some("Other companion")).unwrap(), "我的平板");
+        let reset = app.rename(None).await.unwrap();
+        assert_eq!(reset.display_name, "Companion tablet");
+        assert_eq!(reset.host_id, before.host_id);
+        assert_eq!(reset.public_key_pin, before.public_key_pin);
+        assert_eq!(std::fs::read(root.join("identity.dpapi")).unwrap(), persisted);
+        assert!(app.store.active(&client.id).is_ok());
+        let pending = app.pairing.requests();
+        assert_eq!(pending[0].id, request["requestId"]);
+        assert_eq!(pending[0].verification_code, request["verificationCode"]);
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
     async fn recording_staging_survives_failed_publication_until_owner_cleanup() {

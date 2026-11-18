@@ -527,6 +527,18 @@ fn free_bytes(path: &Path) -> Result<u64> {
     }
 }
 impl Transfers {
+    pub fn in_progress(&self) -> bool {
+        self.sessions.lock().unwrap().values().any(|s|s.progress.lock().unwrap().busy)
+    }
+    pub fn quiesce_for_update(&self) -> Result<()> {
+        let sessions=self.sessions.lock().unwrap();
+        let mut progress=Vec::new();
+        for s in sessions.values() {progress.push(s.progress.lock().unwrap());}
+        if progress.iter().any(|p|p.busy) {return Err("BUSY: copy stream in progress".into());}
+        for s in sessions.values() {s.cancelled.store(true,Ordering::SeqCst);}
+        Ok(())
+    }
+
     pub fn prepare(&self, files: &Files, client: &str, chat: &str, args: &Value) -> Result<Value> {
         let root = PathBuf::from(text(args, "path")?);
         let source = args["source"] == true;
@@ -826,7 +838,7 @@ impl Session {
             return Err("COPY_EXPECTED_FILE".into());
         }
         let mut p = self.progress.lock().unwrap();
-        if !p.started || p.busy || p.done.contains_key(&index) || p.staged.contains_key(&index) {
+        if self.cancelled.load(Ordering::SeqCst) || !p.started || p.busy || p.done.contains_key(&index) || p.staged.contains_key(&index) {
             return Err("COPY_FILE_STATE_CONFLICT".into());
         }
         p.busy = true;

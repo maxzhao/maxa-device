@@ -1,0 +1,289 @@
+{
+  "project": "Termux:API",
+  "url": "https://github.com/termux/termux-api",
+  "commit": "fc26ce17e3badf85d4df191af364fcf7798047f1",
+  "license": "GPL-3.0-only",
+  "copyright": "Termux:API contributors; see preserved upstream source and repository history",
+  "files": [
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/BatteryStatusAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/BatteryStatusAPI.java",
+      "upstreamSha256": "fb3e0e57bed1e37f0c883a06d0424c47df639728bb6df250b09ba2590fa5abcb",
+      "upstreamGitBlob": "557bc9458dc0db288bac4f2c9ce7ab76f56a6d78",
+      "relationship": "direct-derived",
+      "changes": "Retains the upstream battery fields, conversions and system queries; uses the bounded in-process result adapter."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/VolumeAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/VolumeAPI.java",
+      "upstreamSha256": "34cab10f4d336cf9dd77d15fda4d2082f2551816b6f8562f881df5f33fa6d099",
+      "upstreamGitBlob": "6febb9d8f9b36758b0f2444dbf8e3d4fb978ba0b",
+      "relationship": "direct-derived",
+      "changes": "Retains stream enumeration and volume operations; the dispatcher restricts writable streams and validates range."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/CameraInfoAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/CameraInfoAPI.java",
+      "upstreamSha256": "84c94ae4f8169e425cfdbb14dc1ad745fd13f6d3a88d6c8b60210882a3406fe3",
+      "upstreamGitBlob": "bf27a0f4daea1c132a549aba1ffcd707c61c4a90",
+      "relationship": "direct-derived",
+      "changes": "Retains upstream Camera2 metadata enumeration; no capture permission or transport from upstream."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/InfraredAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/InfraredAPI.java",
+      "upstreamSha256": "f60cccac36deaeacf994bc610394472fb79a7f10ec7b8a79c726a574c9aa8da4",
+      "upstreamGitBlob": "24936308832091210d3cf2f56b30210af5d18a4f",
+      "relationship": "direct-derived",
+      "changes": "Retains carrier ranges and transmit implementation; companion validates hardware, ranges and duration."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/util/JsonUtils.java",
+      "destination": "app/src/main/java/com/termux/api/util/JsonUtils.java",
+      "upstreamSha256": "0db803e3750ac4da5d47d089781b4bb1867c4fa4fd9aa3e550ad28686c979858",
+      "upstreamGitBlob": "0d0d69ef2d7efcb9b4d9e1c36895875df8d213aa",
+      "relationship": "direct-derived",
+      "changes": "Retains the upstream JSON helper code with local logging."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/AudioAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/AudioAPI.java",
+      "upstreamSha256": "184a17630ba455641c6268139bb3ea9389d4802147d2b29c99cc7b36961acca5",
+      "upstreamGitBlob": "d69800b62338ef546d7fd80c5643c44c17c69432",
+      "relationship": "direct-derived",
+      "changes": "Retains AudioTrack and AudioManager probes and JSON fields, with in-process result capture."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/BrightnessAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/BrightnessAPI.java",
+      "upstreamSha256": "4ea83d8cda306ada3ee53c1204697d137b12cc273bbb762ca7bf1d0b1e829c5d",
+      "upstreamGitBlob": "7bbeb5b8c9ad40a64024dc0580bfdb74fecaec53",
+      "relationship": "direct-derived",
+      "changes": "Retains the Settings.System write subsystem; replaces clamping/defaulting with explicit input and failure handling."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/TorchAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/TorchAPI.java",
+      "upstreamSha256": "487221a17cb33d107ccd34b98d5376cab4dc017b1b2cdef58581c921b323d518",
+      "upstreamGitBlob": "1e0867c50789bcac4d53fff22a3c9dc0ac8f4570",
+      "relationship": "adaptation",
+      "changes": "Camera2 flash lookup adapted to the rear camera; companion owns bounded torch lifecycle."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/VibrateAPI.java",
+      "destination": "app/src/main/java/com/termux/api/apis/VibrateAPI.java",
+      "upstreamSha256": "ee21a6a9618c5def13dab7d3a2042b0b36b077d551d626f913fafb6134e048ee",
+      "upstreamGitBlob": "c2a69a51ed6fc3ea693a95e657249140051288db",
+      "relationship": "direct-derived",
+      "changes": "Preserves one-shot vibration and silent-mode behavior; removes asynchronous worker and force option."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/NotificationAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedImmediate.kt",
+      "upstreamSha256": "d7dd7f820a2aba87cbfcfd4c4929140d8754e553b1a112534a93b255e4d7d7c5",
+      "upstreamGitBlob": "bc4ca8ae4875a834119c359e8e0130b52be5ea8c",
+      "relationship": "adaptation",
+      "changes": "Uses native publication/channel operations with isolated tags; excludes callbacks and remote actions."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/SensorAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedImmediate.kt",
+      "upstreamSha256": "6048e61004fddfea5d86a40f9e6f7a251737535d4e4789e94fbf262f792c4b66",
+      "upstreamGitBlob": "efa8fede4a9200a4b49ed132bd4db0ef369fb956",
+      "relationship": "adaptation",
+      "changes": "Uses inventory listing only; no listener registration or sampling ported."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/ToastAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedImmediate.kt",
+      "upstreamSha256": "e81117d9cfb204adc00915aaa5be4ca8ef33c349f29594198b8d1dbfa663c87e",
+      "upstreamGitBlob": "96ea2ea0357057104a96aa98502a4c063a3398e0",
+      "relationship": "adaptation",
+      "changes": "Uses native text Toast; custom view styling not imported."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/TextToSpeechAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedImmediate.kt",
+      "upstreamSha256": "b0e32facd5c351f0f44d0dae01f20d11c2619de838585abf942690e2d17d36bc",
+      "upstreamGitBlob": "2dae2dd1c188def4a59d1f3ffbb137de7ea31415",
+      "relationship": "adaptation",
+      "changes": "Service enumeration and bounded speaking restricted to an installed offline voice in a preinstalled engine."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/UsbAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedImmediate.kt",
+      "upstreamSha256": "e8ce065e2816a41bf8c4c497f266917799a9a59e2f50fafaa14defb82ce9e98a",
+      "upstreamGitBlob": "0d92577315380bcb9c42b5fbdd46d59d9d4dba78",
+      "relationship": "adaptation",
+      "changes": "Device inventory only; no opening, descriptor transfer or serial output."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/util/ResultReturner.java",
+      "destination": "app/src/main/java/com/termux/api/util/ResultReturner.java",
+      "upstreamSha256": "2e0b1e1dda0333046d68e54324848ba704b993eb2a5758261d4379904ff62b9c",
+      "upstreamGitBlob": "f0cc20218a8ba1cffb679f98ce5df59f9c7420f1",
+      "relationship": "replacement",
+      "changes": "Reimplements transport with bounded in-process capture; only writer interface shape derived."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/StorageGetAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedFiles.kt",
+      "upstreamSha256": "22e2503c5ffbbea4c98b60d636921da0585ea6a2cc04edb7981e6c91b39367b7",
+      "upstreamGitBlob": "2101c8cf10460b0a055e4ef2f0ea4c9595b1e61f",
+      "relationship": "replacement",
+      "changes": "Returns bounded data from a selected URI instead of writing a caller-controlled Termux path."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/WallpaperAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedFiles.kt",
+      "upstreamSha256": "7fa5a4883319923efae0f7606f9dbcb66f249af4be5f8b34d9fbece55e220e0a",
+      "upstreamGitBlob": "3a8efe62ce70c651573652d4bac807969fa1c29a",
+      "relationship": "adaptation",
+      "changes": "Keeps WallpaperManager image setting, restricted to a manually selected local URI."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/LocationAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "046c58b6df0a348c99c907601209dd81116cb3ef13eb6164bdbdf94b285c9c62",
+      "upstreamGitBlob": "82eafa79c1ce813616931228780cf7a510698817",
+      "relationship": "adaptation",
+      "changes": "Cached sample converted to JSON; removes ongoing subscriptions and remote authorization."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/WifiAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "fcd9446077dc75c046c3728e6c1ace1ed59448c2e5aa6da5d7a084aaf4d2f9e6",
+      "upstreamGitBlob": "0708d9e69ff503367c9940019f993a5faaaaabc3",
+      "relationship": "adaptation",
+      "changes": "Retains connection information after local approval; no scan or Wi-Fi toggle."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/NotificationListAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "3f92826a64bd4e568dbb541a93e9c093964910143dd72e1c040c7a99e3b270f6",
+      "upstreamGitBlob": "388e3520a347c1535367f27e3f3a72a013ed4fa4",
+      "relationship": "adaptation",
+      "changes": "Queries the active listener snapshot only after approval; no notification callbacks or history."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/DialogAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "21b84558b9b4a9dc0b5c69b64298dd69edb21cb659b99aa53b83d567e16a1f6c",
+      "upstreamGitBlob": "0a7eb93def378701e15bbcd9136db20f805c69ec",
+      "relationship": "replacement",
+      "changes": "Local standard confirmation dialog only; does not import the upstream custom widgets."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/ShareAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "146831d65ac276ad574fa84451f9bca1471237e371dd032d1efbc15eb69306b1",
+      "upstreamGitBlob": "a8eeb765521b619468c25dcca170f4faa3cd19ad",
+      "relationship": "adaptation",
+      "changes": "ACTION_SEND chooser for approved text only; no arbitrary Intent or path handling."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/ContactListAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "568bd252fbc7cce596f6fa0fadfb96b8a384b59e9b6b7ba5f3b2a31658d799a0",
+      "upstreamGitBlob": "142e2a48837106759b03762106c1d5001eb56070",
+      "relationship": "adaptation",
+      "changes": "Queries only the selected platform phone projection and bounds results per approval."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/CallLogAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "519de84dfe1a4463ca4a8efb2e8ca0670e83de94e3ae6a739ff1e42d268ea275",
+      "upstreamGitBlob": "39c60b546d950954c5309fe02dc7e4d5d93c8a6e",
+      "relationship": "adaptation",
+      "changes": "Keeps CallLog provider projection under explicit approval and limited rows."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/SmsInboxAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "2a5369546c3784cfc238af0a4aa025fa3917aa39e90ad5281fc85af070ff89af",
+      "upstreamGitBlob": "17e5693ed46147089712706ff10929acbe69898f",
+      "relationship": "replacement",
+      "changes": "No deprecated SMS inbox endpoint/source is imported; sms-list is a bounded Telephony.Sms provider adapter."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/SmsSendAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "0cc80320785e358c96959dffea94a5b3e3bbc3d3c07681823c8a38024bc9ec89",
+      "upstreamGitBlob": "c7d34862d1b8c6beaf9f0f7c37ebfd6940b34c59",
+      "relationship": "replacement",
+      "changes": "No SmsManager send; hands off an approved number and message to the default compose UI."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/TelephonyAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedProtected.kt",
+      "upstreamSha256": "b0d8f3f1facf2626a367975b7573207504f167d115c62e6691739380f005234e",
+      "upstreamGitBlob": "6a751e6c8d9bfdf6d9fa4b303fd3b40e5062fd3c",
+      "relationship": "adaptation",
+      "changes": "Bounded cellular snapshot; replaces direct telephony call with dialer handoff. No general device-information endpoint."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/FingerprintAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "c78d09bd18c1b0f6e9311a03081df349a16a50f5ee97333718795f1366cfcb97",
+      "upstreamGitBlob": "233f2044febb9079e21c361ee856365504a27f78",
+      "relationship": "replacement",
+      "changes": "Uses BiometricPrompt with strong Android biometrics rather than legacy fingerprint callbacks."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/CameraPhotoAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "e5c1bf1093ed72e9a2e6bf2b928fcfa05bc2be1a6a90c63aef5179fcb61c8351",
+      "upstreamGitBlob": "3cc6738a07237d87314525983c94b6c486fe1895",
+      "relationship": "replacement",
+      "changes": "Uses Android camera confirmation and returns only a thumbnail; no Camera2 capture pipeline ported."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/MicRecorderAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "8d8ae7390beb2053f1bfdc6e59f5e57fcfd9c91ce3c7f13b62c06ff3d46313ab",
+      "upstreamGitBlob": "d48e06c388a3f63b4173137f72b54ed10dee96e2",
+      "relationship": "adaptation",
+      "changes": "MediaRecorder lifecycle limited to a visible, stoppable local session with bounded AAC output."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/SpeechToTextAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "c23de05675ccddd8a1cce38d6f3bb3cbddcec5f7de117b0e26f026947763dace",
+      "upstreamGitBlob": "c33d7a31a001dc597550c122d339652db1f0b66c",
+      "relationship": "replacement",
+      "changes": "Requires platform on-device recognizer; no external/network recognizer fallback."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/MediaPlayerAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "1a182dac5f297ec9f08f5cfd2ad46cb04ef2a4ddecda68e0b36ce21f7323cc41",
+      "upstreamGitBlob": "081bc81257673526461acd0adbe7f07d018bedff",
+      "relationship": "adaptation",
+      "changes": "MediaPlayer restricted to a selected local audio descriptor; no URL, playlist or persistent service."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/NfcAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedCapture.kt",
+      "upstreamSha256": "e3b9c566e3d1ed282d336a0932032185fe9353b76f0362fdb2ae6afcd9ee4dea",
+      "upstreamGitBlob": "d0d607941734972f8745dd25cbe89f38d3f60825",
+      "relationship": "adaptation",
+      "changes": "Reads NDEF in foreground reader mode; no raw tag ID, writes or arbitrary APDU."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/TextToSpeechAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedLocalEffects.kt",
+      "upstreamSha256": "b0e32facd5c351f0f44d0dae01f20d11c2619de838585abf942690e2d17d36bc",
+      "upstreamGitBlob": "2dae2dd1c188def4a59d1f3ffbb137de7ea31415",
+      "relationship": "adaptation",
+      "changes": "Service enumeration and bounded speaking restricted to an installed offline voice in a preinstalled engine."
+    },
+    {
+      "upstream": "app/src/main/java/com/termux/api/apis/JobSchedulerAPI.java",
+      "destination": "app/src/main/java/com/maxa/device/companion/EmbeddedLocalEffects.kt",
+      "upstreamSha256": "3f6a970e89a1a561c27ab6309b12cc45ce56288a5d76a9da1d772ffea9fac053",
+      "upstreamGitBlob": "bfd12a2d19ea32b72f65d41163b71f151683f68b",
+      "relationship": "replacement",
+      "changes": "Uses platform scheduler for a fixed non-sensitive notification only; does not import command/script service."
+    }
+  ]
+}

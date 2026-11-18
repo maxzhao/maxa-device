@@ -1,5 +1,5 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-#[cfg(windows)]
+#![cfg_attr(all(windows, feature = "desktop", not(debug_assertions)), windows_subsystem = "windows")]
+#[cfg(all(windows, feature = "desktop"))]
 mod desktop {
     use maxa_device::{model::*, state::AppState};
     use std::sync::Arc;
@@ -482,10 +482,19 @@ fn main() {
         }
         return;
     }
+    #[cfg(feature = "desktop")]
     desktop::run()
 }
-#[cfg(not(windows))]
-fn main() {
-    eprintln!("Maxa Device first release supports Windows x64 hosts only");
-    std::process::exit(1)
+#[cfg(unix)]
+#[tokio::main]
+async fn main() {
+    if let Err(error) = maxa_device::headless::run().await {
+        if std::env::args().nth(1).as_deref() == Some("android") && std::env::args().nth(2).as_deref() == Some("api") {
+            let (code, message) = error.split_once(": ").unwrap_or(("ERROR", error.as_str()));
+            eprintln!("{}", serde_json::json!({"ok":false,"error":{"code":code,"message":message}}));
+        } else {
+            eprintln!("{error}");
+        }
+        std::process::exit(1);
+    }
 }

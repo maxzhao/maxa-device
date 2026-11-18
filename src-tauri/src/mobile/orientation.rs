@@ -106,7 +106,7 @@ pub(super) async fn execute(ctx: &Context<'_>, mode: &str) -> Result<String> {
         }
         return Err(e);
     }
-    Ok(format!("Changed device orientation to {mode}"))
+    Ok(super::tools::orientation_changed(mode))
 }
 pub(super) async fn clear(phone: &Phone, dev: &AdbDevice) -> Result<()> {
     let mut slot = phone.orientation.lock().await;

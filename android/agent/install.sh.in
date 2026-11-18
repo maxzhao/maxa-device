@@ -1,0 +1,152 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Public payload: never embed a link secret. Keep all software in Termux trusted.
+set -eu
+umask 077
+version='@VERSION@'
+agent_sha256='@AGENT_SHA256@'
+port= secret=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --port) [ "$#" -ge 2 ] || exit 2; port=$2; shift 2 ;;
+        --secret) [ "$#" -ge 2 ] || exit 2; secret=$2; shift 2 ;;
+        *) echo 'Usage: install.sh --port P --secret S' >&2; exit 2 ;;
+    esac
+done
+case "$port" in ''|*[!0-9]*) echo 'Invalid loopback port' >&2; exit 2;; esac
+[ "$port" -ge 1 ] && [ "$port" -le 65535 ] || exit 2
+case "$secret" in *[!A-Za-z0-9_-]*) echo 'Invalid link secret' >&2; exit 2;; esac
+[ "${#secret}" -eq 43 ] || exit 2
+[ "${PREFIX:-}" = /data/data/com.termux/files/usr ] || { echo 'Run in Termux with its original PREFIX' >&2; exit 1; }
+case "${HOME:-}" in /data/data/com.termux/files/home|/data/user/0/com.termux/files/home) ;; *) echo 'Private Termux HOME required' >&2; exit 1;; esac
+for tool in curl sha256sum tar mktemp; do command -v "$tool" >/dev/null || { echo "Missing Termux command: $tool" >&2; exit 1; }; done
+work=$(mktemp -d "${TMPDIR:-$PREFIX/tmp}/maxa-device-install.XXXXXX")
+supervised=0
+service="$PREFIX/var/service/maxa-device"
+if command -v sv >/dev/null 2>&1 && command -v runsvdir >/dev/null 2>&1 && [ -d "$PREFIX/var/service" ]; then
+    supervised=1
+fi
+recovery_needed=0
+service_stage=
+cleanup() {
+    result=$?
+    trap - EXIT HUP INT TERM
+    rm -r -- "$work" || :
+    if [ -n "$service_stage" ]; then rm -r -- "$service_stage" || :; fi
+    if [ "$result" -ne 0 ] && [ "$recovery_needed" -eq 1 ]; then
+        if [ "$supervised" -eq 1 ]; then
+            printf '%s\n' 'Installation stopped; no process was force-killed. After resolving the error (and any busy operation), run: sv up maxa-device' 'If the supervisor is unavailable, reopen Termux first.' >&2
+        else
+            printf '%s\n' 'Installation stopped; no process was force-killed. After resolving the error, start the Agent with:' >&2
+            printf 'nohup "%s/bin/maxa-device" serve >> "%s/.local/share/maxa-device/agent.log" 2>&1 < /dev/null &\n' "$PREFIX" "$HOME" >&2
+        fi
+    fi
+    exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+wait_supervisor() {
+    n=0
+    while [ ! -p "$service/supervise/ok" ]; do
+        n=$((n + 1)); [ "$n" -le 15 ] || { echo 'runit supervisor not ready after 15 s; reopen Termux and run sv up maxa-device' >&2; return 1; }
+        sleep 1
+    done
+}
+# Neither current Agent nor installed files are touched until the payload hash passes.
+curl --noproxy '*' -fsS --max-time 180 "http://127.0.0.1:$port/install/agent.tar.gz" -o "$work/agent.tar.gz"
+printf '%s  %s\n' "$agent_sha256" "$work/agent.tar.gz" | sha256sum -c --quiet || { echo 'Agent SHA256 mismatch; installed version unchanged' >&2; exit 1; }
+mkdir "$work/payload"
+tar -xzf "$work/agent.tar.gz" -C "$work/payload" maxa-device
+[ -f "$work/payload/maxa-device" ] && [ ! -L "$work/payload/maxa-device" ] || exit 1
+chmod 700 "$work/payload/maxa-device"
+# Do not let runit restart the old executable after the CLI's safe shutdown.
+# once does not terminate a running service or bypass the busy barrier.
+if [ "$supervised" -eq 1 ] && [ -f "$service/run" ]; then
+    recovery_needed=1
+    wait_supervisor
+    sv -w 15 once "$service" || { echo 'Cannot put the existing service into once mode; no update performed' >&2; exit 1; }
+fi
+# Local CLI holds the server's mutation barrier, rechecks jobs/copy/recording, then
+# closes admission before stopping. No remote management or force-kill fallback.
+"$work/payload/maxa-device" status > "$work/status.json" || { echo 'Cannot determine running Agent state; no update performed' >&2; exit 1; }
+if ! grep -q '"running":false' "$work/status.json"; then
+    recovery_needed=1
+    "$work/payload/maxa-device" shutdown > "$work/shutdown.json" || { echo 'Agent busy/unavailable; stop current operations first. No update performed.' >&2; exit 1; }
+    n=0
+    while [ -S "$HOME/.local/share/maxa-device/control.sock" ]; do
+        n=$((n + 1)); [ "$n" -le 100 ] || { echo 'Agent shutdown unconfirmed; no update performed' >&2; exit 1; }
+        sleep 0.1
+    done
+fi
+# A nohup Agent has now stopped too. Gate a fresh service before publishing run;
+# on repair the down file also protects against a supervisor restart mid-update.
+recovery_needed=1
+if [ "$supervised" -eq 1 ]; then
+    if [ -d "$service" ]; then
+        run_dir="$service"
+    else
+        # Publish down + run together: runsvdir must never see a half-created
+        # fresh service and start it before link completes.
+        service_stage=$(mktemp -d "$PREFIX/var/.maxa-device-service.XXXXXX")
+        run_dir="$service_stage"
+    fi
+    : > "$run_dir/down"
+    cat > "$run_dir/.run-$$" <<EOF
+#!$PREFIX/bin/sh
+umask 077
+export HOME='$HOME'
+export PREFIX='$PREFIX'
+: >> '$HOME/.local/share/maxa-device/agent.log'
+'$PREFIX/bin/chmod' 600 '$HOME/.local/share/maxa-device/agent.log' || exit 1
+exec '$PREFIX/bin/maxa-device' serve >> '$HOME/.local/share/maxa-device/agent.log' 2>&1
+EOF
+    chmod 700 "$run_dir/.run-$$"
+    mv -f "$run_dir/.run-$$" "$run_dir/run"
+    if [ -n "$service_stage" ]; then
+        mv -T "$service_stage" "$service"
+        service_stage=
+    fi
+fi
+base="$PREFIX/opt/maxa-device"
+mkdir -p "$base" "$PREFIX/bin" "$HOME/.local/share/maxa-device"
+chmod 700 "$base" "$HOME/.local/share/maxa-device"
+# Stage on the installation filesystem. Publish the binary by atomic rename,
+# including same-version repairs (never truncate a mapped running executable).
+stage=$(mktemp -d "$base/.install.XXXXXX")
+cp "$work/payload/maxa-device" "$stage/maxa-device"
+chmod 700 "$stage/maxa-device"
+mkdir -p "$base/$version"
+mv -f "$stage/maxa-device" "$base/$version/maxa-device"
+rmdir "$stage"
+link="$PREFIX/bin/.maxa-device-install-$$"
+ln -s "$base/$version/maxa-device" "$link"
+mv -f "$link" "$PREFIX/bin/maxa-device"
+"$PREFIX/bin/maxa-device" link --port "$port" --secret "$secret"
+# No credentials in stdout, the run file or logs. Preserve the existing nohup fallback.
+if [ "$supervised" -eq 1 ]; then
+    : >> "$HOME/.local/share/maxa-device/agent.log"
+    chmod 600 "$HOME/.local/share/maxa-device/agent.log"
+    rm -f -- "$service/down"
+    wait_supervisor
+    sv -w 15 up "$service" || { echo 'runit could not start the Agent' >&2; exit 1; }
+else
+    nohup "$PREFIX/bin/maxa-device" serve >> "$HOME/.local/share/maxa-device/agent.log" 2>&1 < /dev/null &
+    chmod 600 "$HOME/.local/share/maxa-device/agent.log"
+fi
+n=0
+while [ ! -S "$HOME/.local/share/maxa-device/control.sock" ]; do
+    n=$((n + 1)); [ "$n" -le 100 ] || { echo 'Agent did not start; inspect its private agent.log' >&2; exit 1; }
+    sleep 0.1
+done
+if [ "$supervised" -eq 1 ]; then
+    "$PREFIX/bin/maxa-device" status > "$work/started.json" || { echo 'Supervised Agent status unavailable; inspect its private agent.log' >&2; exit 1; }
+    if grep -q '"running":false' "$work/started.json"; then
+        echo 'Supervised Agent is not running; inspect its private agent.log' >&2
+        exit 1
+    fi
+    printf '%s\n' 'Supervised Agent: stop with sv down maxa-device; start with sv up maxa-device.'
+fi
+printf '%s\n' 'Built-in Android API: maxa-device android api battery-status [--json <object>]. Enable its capability and grants in the companion App; no Termux:API plugin is required and existing termux-* commands are unchanged.'
+printf '%s\n' 'Maxa Device installed and linked. Modules default off: maxa-device module enable system; maxa-device module enable mobile' 'All software run in Termux can access host identity, pairing credentials and enabled companion capabilities.' 'Optional, human-selected: termux-wake-lock; battery optimization exemption; termux-services or Termux:Boot. Android may still kill the Agent (including Android 12+ child-process limits). No system settings were changed.'
+recovery_needed=0

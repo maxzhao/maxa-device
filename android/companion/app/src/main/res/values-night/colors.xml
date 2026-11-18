@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#0F1115</color>
+    <color name="surface">#181B21</color>
+    <color name="outline">#2A2F38</color>
+    <color name="text">#E6E8EC</color>
+    <color name="text_secondary">#9AA3AF</color>
+    <color name="primary">#6EA0FF</color>
+    <color name="primary_bg">#1D2A44</color>
+    <color name="primary_track">#34507F</color>
+    <color name="on_primary">#0B1220</color>
+    <color name="button_secondary">#222833</color>
+    <color name="ripple">#336EA0FF</color>
+    <color name="ok">#4ADE80</color>
+    <color name="ok_bg">#16291D</color>
+    <color name="warn">#F5B04A</color>
+    <color name="warn_bg">#2B2214</color>
+    <color name="warn_outline">#4A3A1E</color>
+    <color name="off_bg">#22262D</color>
+    <color name="danger">#F87171</color>
+    <color name="code_bg">#11141A</color>
+    <color name="switch_thumb_off">#C9CED6</color>
+    <color name="switch_track_off">#3A404A</color>
+</resources>

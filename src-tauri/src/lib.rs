@@ -18,3 +18,8 @@ pub mod state;
 pub mod store;
 pub mod transfer;
 pub mod windows;
+
+pub mod android;
+pub mod companion;
+#[cfg(unix)]
+pub mod headless;
